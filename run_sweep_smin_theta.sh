@@ -13,10 +13,6 @@ MODEL="deit_base_patch16_224"
 EPOCHS=30
 BASE_DIR="/work/hdd/bdjd/hypergraph_pruning/results"
 
-ACCOUNT="bdjd-delta-gpu"
-PARTITION="gpuA40x4"
-EXCLUDE="gpub066,gpub088"
-
 # ---- edit after sweep 1 completes ----
 BEST_SMIN=0.15    # placeholder; update from sweep_smin results
 
@@ -24,9 +20,13 @@ sbatch_run() {
     local name=$1 S_MIN=$2 THETA=$3 ALPHA=$4 ETHR=$5
     local outdir="${BASE_DIR}/${name}"
     mkdir -p "$outdir"
-    sbatch --account=$ACCOUNT --partition=$PARTITION --exclude=$EXCLUDE \
-           --nodes=1 --gpus-per-node=1 --cpus-per-task=8 --mem=64G \
-           --time=10:00:00 --job-name="hg_${name}" \
+    sbatch --job-name="hg_${name}" \
+           --partition=gpuA100x4 \
+           --gres=gpu:1 \
+           --cpus-per-task=32 \
+           --mem=64G \
+           --time=24:00:00 \
+           --account=bdjd-delta-gpu \
            --output="${outdir}/slurm_%j.out" --error="${outdir}/slurm_%j.err" \
            --export=ALL \
            --wrap="
