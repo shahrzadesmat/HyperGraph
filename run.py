@@ -176,16 +176,16 @@ def finetune(model, train_loader, val_loader, args, device):
         for images, labels in tqdm(train_loader, desc=f"epoch {epoch+1}/{args.epochs}", leave=False):
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
-            loss = criterion(model(images), labels)
+            logits = model(images)                     # single forward pass
+            loss   = criterion(logits, labels)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             scheduler.step()
 
-            with torch.no_grad():
-                ep_loss    += loss.item() * images.size(0)
-                ep_correct += (model(images).argmax(1) == labels).sum().item()
-                ep_total   += images.size(0)
+            ep_loss    += loss.item() * images.size(0)
+            ep_correct += (logits.detach().argmax(1) == labels).sum().item()
+            ep_total   += images.size(0)
 
         train_acc = ep_correct / ep_total
         val_acc, val_loss = evaluate(model, val_loader, device)
@@ -208,8 +208,8 @@ def finetune(model, train_loader, val_loader, args, device):
 # MAC counting helper
 # ---------------------------------------------------------------------------
 
-def count_macs(model, device):
-    example = torch.randn(1, 3, 224, 224, device=device)
+def count_macs(model, device, crop_size=224):
+    example = torch.randn(1, 3, crop_size, crop_size, device=device)
     macs, params = tp.utils.count_ops_and_params(model, example)
     return macs, params
 
@@ -235,7 +235,7 @@ def main():
     model = model.to(device)
 
     # --- baseline MACs ---
-    base_macs, base_params = count_macs(model, device)
+    base_macs, base_params = count_macs(model, device, args.val_crop)
     print(f"\n[Baseline] MACs={base_macs/1e9:.3f}G  Params={base_params/1e6:.1f}M")
 
     # --- data ---
@@ -266,7 +266,7 @@ def main():
     model = prune_vit(model, hg, hg["ratios"], device)
 
     # --- post-prune MACs ---
-    pruned_macs, pruned_params = count_macs(model, device)
+    pruned_macs, pruned_params = count_macs(model, device, args.val_crop)
     actual_ratio = 1.0 - pruned_macs / base_macs
     print(f"\n[Pruned]  MACs={pruned_macs/1e9:.3f}G  Params={pruned_params/1e6:.1f}M  "
           f"Reduction={actual_ratio*100:.1f}%")

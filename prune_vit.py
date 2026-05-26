@@ -49,7 +49,8 @@ def remove_blocks(model: nn.Module, removed_blocks: Dict[int, float]) -> nn.Modu
 def prune_attention_global(model: nn.Module,
                             hg: Dict,
                             ratios: Dict[int, Dict],
-                            device: torch.device) -> torch.Tensor:
+                            device: torch.device,
+                            index_map: Dict[int, int]) -> torch.Tensor:
     """
     Prune the shared attention embedding dimension across all surviving blocks.
 
@@ -64,9 +65,9 @@ def prune_attention_global(model: nn.Module,
     if not surviving:
         return None
 
-    # Use first surviving block to get dimensions
-    first_idx   = sorted(surviving.keys())[0]
-    first_block = model.blocks[first_idx]
+    # Use first surviving block to get dimensions (use remapped index)
+    first_orig  = sorted(surviving.keys())[0]
+    first_block = model.blocks[index_map[first_orig]]
     embed_dim   = first_block.attn.proj.out_features
     num_heads   = first_block.attn.num_heads
     head_dim    = embed_dim // num_heads
@@ -87,9 +88,9 @@ def prune_attention_global(model: nn.Module,
     channel_importance = torch.zeros(embed_dim, device=device)
 
     for i in surviving:
-        block  = model.blocks[i]
-        weight = sensitivities[i]          # high sensitivity = high influence
-        w_qkv  = block.attn.qkv.weight.data  # (3*embed_dim, in_dim)
+        block  = model.blocks[index_map[i]]   # remap original → new index
+        weight = sensitivities[i]             # high sensitivity = high influence
+        w_qkv  = block.attn.qkv.weight.data  # (3*embed_dim, embed_dim)
 
         # importance per embedding dimension = Q+K+V row norms
         for h in range(num_heads):
@@ -113,19 +114,27 @@ def prune_attention_global(model: nn.Module,
                            keep_idx + embed_dim,
                            keep_idx + 2 * embed_dim])
 
+    new_embed_dim = len(keep_idx)
+
     # Apply to ALL surviving blocks uniformly (residual stream constraint)
     for i in surviving:
-        block = model.blocks[i]
+        block = model.blocks[index_map[i]]   # remap original → new index
         qkv   = block.attn.qkv
         proj  = block.attn.proj
 
-        qkv.weight = nn.Parameter(qkv.weight.data[qkv_keep, :])
+        # QKV: prune output rows (kept head channels) AND input cols (new embed_dim)
+        qkv.weight = nn.Parameter(qkv.weight.data[qkv_keep, :][:, keep_idx])
         if qkv.bias is not None:
             qkv.bias = nn.Parameter(qkv.bias.data[qkv_keep])
         qkv.out_features = len(qkv_keep)
+        qkv.in_features  = new_embed_dim
 
-        proj.weight = nn.Parameter(proj.weight.data[:, keep_idx])
-        proj.in_features = len(keep_idx)
+        # proj: prune input cols (kept attention output) AND output rows (new embed_dim)
+        proj.weight = nn.Parameter(proj.weight.data[keep_idx, :][:, keep_idx])
+        if proj.bias is not None:
+            proj.bias = nn.Parameter(proj.bias.data[keep_idx])
+        proj.in_features  = new_embed_dim
+        proj.out_features = new_embed_dim
 
         # update head count and scale
         block.attn.num_heads = heads_to_keep
@@ -142,7 +151,8 @@ def prune_attention_global(model: nn.Module,
 def prune_mlp_per_block(model: nn.Module,
                          hg: Dict,
                          ratios: Dict[int, Dict],
-                         device: torch.device):
+                         device: torch.device,
+                         index_map: Dict[int, int]):
     """
     Prune MLP hidden dimension independently per surviving block.
     Each block gets the ratio assigned to its theta-group.
@@ -151,7 +161,7 @@ def prune_mlp_per_block(model: nn.Module,
     surviving = hg["surviving_blocks"]
 
     for i in surviving:
-        block = model.blocks[i]
+        block = model.blocks[index_map[i]]   # remap original → new index
         ratio = min(ratios[i]["mlp"], MAX_PRUNE)
         if ratio <= 0.0:
             continue
@@ -226,6 +236,11 @@ def update_global_embeddings(model: nn.Module,
             if hasattr(block, attr):
                 _prune_layernorm(getattr(block, attr), keep_idx)
 
+    # classifier head: input features reduced to new_dim
+    if hasattr(model, 'head') and isinstance(model.head, nn.Linear):
+        model.head.weight = nn.Parameter(model.head.weight.data[:, keep_idx])
+        model.head.in_features = new_dim
+
     print(f"[Embeddings] Updated to new embed_dim={new_dim}")
 
 
@@ -259,11 +274,16 @@ def prune_vit(model: nn.Module,
     # Step 1 — depth pruning
     model = remove_blocks(model, hg["removed_blocks"])
 
+    # Build mapping: original block index → new position in re-indexed model.blocks
+    # (remove_blocks compacts the list; subsequent steps must use new positions)
+    original_surviving = sorted(hg["surviving_blocks"].keys())
+    index_map: Dict[int, int] = {orig: new for new, orig in enumerate(original_surviving)}
+
     # Step 2 — attention width pruning (global, sensitivity-weighted)
-    keep_idx = prune_attention_global(model, hg, ratios, device)
+    keep_idx = prune_attention_global(model, hg, ratios, device, index_map)
 
     # Step 3 — MLP width pruning (per-block)
-    prune_mlp_per_block(model, hg, ratios, device)
+    prune_mlp_per_block(model, hg, ratios, device, index_map)
 
     # Step 4 — fix global embeddings
     update_global_embeddings(model, keep_idx, device)

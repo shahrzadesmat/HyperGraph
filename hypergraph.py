@@ -177,26 +177,38 @@ def form_groups_by_theta(scores: Dict[int, Dict],
                 "mlp":  scores[i]["mlp"]  / max_m}
             for i in block_ids}
 
-    def greedy_group(key: str) -> List[List[int]]:
-        groups: List[List[int]] = []
-        used = set()
-        for i in block_ids:
-            if i in used:
-                continue
-            group = [i]
-            used.add(i)
-            for j in block_ids:
-                if j in used:
-                    continue
+    def connected_components(key: str) -> List[List[int]]:
+        # Build adjacency: edge between i and j if |norm_i - norm_j| < theta
+        # Uses BFS connected components so grouping is transitive and
+        # order-independent (unlike the old greedy seed approach).
+        adj: Dict[int, List[int]] = {i: [] for i in block_ids}
+        for idx_i, i in enumerate(block_ids):
+            for j in block_ids[idx_i + 1:]:
                 if abs(norm[i][key] - norm[j][key]) < theta:
-                    group.append(j)
-                    used.add(j)
-            groups.append(sorted(group))
+                    adj[i].append(j)
+                    adj[j].append(i)
+
+        groups: List[List[int]] = []
+        visited: set = set()
+        for start in block_ids:
+            if start in visited:
+                continue
+            component: List[int] = []
+            queue = [start]
+            visited.add(start)
+            while queue:
+                node = queue.pop(0)
+                component.append(node)
+                for neighbour in adj[node]:
+                    if neighbour not in visited:
+                        visited.add(neighbour)
+                        queue.append(neighbour)
+            groups.append(sorted(component))
         return groups
 
     return {
-        "attn_groups": greedy_group("attn"),
-        "mlp_groups":  greedy_group("mlp"),
+        "attn_groups": connected_components("attn"),
+        "mlp_groups":  connected_components("mlp"),
     }
 
 
@@ -240,6 +252,9 @@ def allocate_ratios(groups: Dict[str, List[List[int]]],
     def _group_ratio(group_blocks: List[int], key: str) -> float:
         live = [i for i in group_blocks if i in surviving_blocks]
         if not live:
+            return 0.0
+        if r_base == 0.0:
+            # depth pruning already met the MAC budget; skip width pruning
             return 0.0
         total_imp = sum(boosted_scores[i][key] for i in surviving_blocks) + 1e-8
         avg_imp   = sum(boosted_scores[i][key] for i in live) / len(live)
