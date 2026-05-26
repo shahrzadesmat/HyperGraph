@@ -11,9 +11,9 @@
 set -e
 
 DATA_PATH="/work/hdd/bdjd/imagenet_10pct"
-TARGET_MACS=9.0
-MODEL="deit_base_patch16_224"
-EPOCHS=30
+TARGET_MACS=2.5
+MODEL="deit_small_patch16_224"
+EPOCHS=20
 BASE_DIR="/work/hdd/bdjd/hypergraph_pruning/results"
 
 # ---- edit these after sweeps 1 & 2 ----
