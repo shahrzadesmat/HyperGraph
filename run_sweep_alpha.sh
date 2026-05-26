@@ -10,7 +10,7 @@
 
 set -e
 
-DATA_PATH="/work/hdd/bdjd/imagenet"
+DATA_PATH="/work/hdd/bdjd/imagenet_10pct"
 TARGET_MACS=9.0
 MODEL="deit_base_patch16_224"
 EPOCHS=30
