@@ -282,7 +282,8 @@ def build_hypergraph(model: nn.Module,
                       target_macs_g: float,
                       S_min: float = 0.0,
                       theta: float = 1.0,
-                      alpha: float = 0.0) -> Dict:
+                      alpha: float = 0.0,
+                      edge_threshold: float = 0.3) -> Dict:
     """
     Full pipeline.  Returns a dict with everything the pruner needs.
 
@@ -306,10 +307,10 @@ def build_hypergraph(model: nn.Module,
     scores = {i: s for i, s in scores.items() if i in surviving_blocks}
 
     # --- alpha: functional edges + importance boost ---
-    edges         = compute_functional_edges(scores, threshold=0.3)
+    edges         = compute_functional_edges(scores, threshold=edge_threshold)
     boosted_scores = apply_alpha_boost(scores, edges, alpha)
 
-    print(f"\n[Hypergraph] Functional edges (alpha={alpha}):")
+    print(f"\n[Hypergraph] Functional edges (alpha={alpha}, edge_threshold={edge_threshold}):")
     if edges:
         for (i, j), w in sorted(edges.items()):
             print(f"  b{i}_attn -> b{j}_attn  weight={w:.3f}")

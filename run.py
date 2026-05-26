@@ -60,9 +60,12 @@ def parse_args():
     # Pruning
     p.add_argument("--target_macs_g",  type=float, required=True,
                    help="Target MACs in GigaOps, e.g. 9.0")
-    p.add_argument("--S_min",          type=float, default=0.0)
-    p.add_argument("--theta",          type=float, default=1.0)
-    p.add_argument("--alpha",          type=float, default=0.0)
+    p.add_argument("--S_min",           type=float, default=0.0)
+    p.add_argument("--theta",           type=float, default=1.0)
+    p.add_argument("--alpha",           type=float, default=0.0)
+    p.add_argument("--edge_threshold",  type=float, default=0.3,
+                   help="Min importance similarity for a functional edge to form. "
+                        "Higher = sparser graph (fewer edges, stronger signal per edge).")
 
     # Fine-tuning
     p.add_argument("--epochs",         type=int,   default=30)
@@ -245,7 +248,8 @@ def main():
     print(f"  Accuracy={base_acc:.4f}  Loss={base_loss:.4f}")
 
     # --- build hypergraph ---
-    print(f"\n[Hypergraph] S_min={args.S_min}  theta={args.theta}  alpha={args.alpha}")
+    print(f"\n[Hypergraph] S_min={args.S_min}  theta={args.theta}  "
+          f"alpha={args.alpha}  edge_threshold={args.edge_threshold}")
     criterion_for_taylor = nn.CrossEntropyLoss()
     hg = build_hypergraph(
         model, calib_loader, criterion_for_taylor, device,
@@ -254,6 +258,7 @@ def main():
         S_min           = args.S_min,
         theta           = args.theta,
         alpha           = args.alpha,
+        edge_threshold  = args.edge_threshold,
     )
 
     # --- prune ---
@@ -281,9 +286,10 @@ def main():
     # --- results summary ---
     results = {
         "model":          args.model,
-        "S_min":          args.S_min,
-        "theta":          args.theta,
-        "alpha":          args.alpha,
+        "S_min":           args.S_min,
+        "theta":           args.theta,
+        "alpha":           args.alpha,
+        "edge_threshold":  args.edge_threshold,
         "target_macs_g":  args.target_macs_g,
         "baseline_macs_g":  round(base_macs / 1e9, 4),
         "pruned_macs_g":    round(pruned_macs / 1e9, 4),
