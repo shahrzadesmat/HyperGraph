@@ -241,6 +241,21 @@ def update_global_embeddings(model: nn.Module,
         model.head.weight = nn.Parameter(model.head.weight.data[:, keep_idx])
         model.head.in_features = new_dim
 
+    # MLP fc1 input and fc2 output also connect to the residual stream,
+    # so they must be sliced to new_dim after embed_dim changes.
+    for block in model.blocks:
+        if hasattr(block, 'mlp'):
+            fc1 = block.mlp.fc1
+            fc2 = block.mlp.fc2
+            # fc1: weight (hidden, embed_dim) → (hidden, new_dim)
+            fc1.weight = nn.Parameter(fc1.weight.data[:, keep_idx])
+            fc1.in_features = new_dim
+            # fc2: weight (embed_dim, hidden) → (new_dim, hidden)
+            fc2.weight = nn.Parameter(fc2.weight.data[keep_idx, :])
+            if fc2.bias is not None:
+                fc2.bias = nn.Parameter(fc2.bias.data[keep_idx])
+            fc2.out_features = new_dim
+
     print(f"[Embeddings] Updated to new embed_dim={new_dim}")
 
 
