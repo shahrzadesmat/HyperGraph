@@ -34,6 +34,9 @@ sbatch_run() {
            --output="${outdir}/slurm_%j.out" --error="${outdir}/slurm_%j.err" \
            --export=ALL \
            --wrap="
+export PATH=/work/hdd/bdjd/miniconda3/bin:\$PATH
+source /work/hdd/bdjd/miniconda3/etc/profile.d/conda.sh
+conda activate pytorch_fresh
 cd /work/hdd/bdjd/hypergraph_pruning
 PYTHONUNBUFFERED=1 python run.py \
   --model ${MODEL} --data_path ${DATA_PATH} \
