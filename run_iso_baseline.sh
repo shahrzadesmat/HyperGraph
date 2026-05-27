@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=64G
-#SBATCH --time=24:00:00
+#SBATCH --time=6:00:00
 #SBATCH --account=bdjd-delta-gpu
 #
 # Isomorphic pruning baseline — arxiv 2407.04616 approach.
