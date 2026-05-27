@@ -29,14 +29,15 @@ MAX_PRUNE      = 0.85  # hard cap on pruning ratio
 def remove_blocks(model: nn.Module, removed_blocks: Dict[int, float]) -> nn.Module:
     """
     Remove all blocks whose index is in removed_blocks.
-    Rebuilds model.blocks as a new ModuleList without the removed indices.
+    Rebuilds model.blocks as a new Sequential without the removed indices.
+    Must be Sequential (not ModuleList) because timm calls self.blocks(x) directly.
     """
     if not removed_blocks:
         return model
 
     keep_indices = [i for i in range(len(model.blocks))
                     if i not in removed_blocks]
-    model.blocks = nn.ModuleList([model.blocks[i] for i in keep_indices])
+    model.blocks = nn.Sequential(*[model.blocks[i] for i in keep_indices])
     print(f"[Depth prune] Removed blocks {sorted(removed_blocks.keys())}. "
           f"Remaining: {len(model.blocks)}")
     return model
