@@ -38,6 +38,22 @@ from tqdm import tqdm
 HEAD_SCALE = 0.2   # r_attn = r_mlp * HEAD_SCALE  (paper: 0.1/0.5 for DeiT-Small)
 
 
+def _fix_attn_heads(model, orig_num_heads):
+    """
+    After torch_pruning shrinks QKV output channels it does not update
+    block.attn.num_heads / head_dim, which timm uses in the reshape:
+        qkv(x).reshape(B, N, 3, num_heads, head_dim)
+    We recompute head_dim from the new QKV size (num_heads stays fixed).
+    round_to=orig_num_heads in MetaPruner guarantees divisibility.
+    """
+    for block in model.blocks:
+        if hasattr(block, 'attn') and hasattr(block.attn, 'qkv'):
+            new_embed = block.attn.qkv.out_features // 3
+            block.attn.head_dim = new_embed // orig_num_heads
+            block.attn.num_heads = orig_num_heads
+            block.attn.scale = block.attn.head_dim ** -0.5
+
+
 # ---------------------------------------------------------------------------
 # Args
 # ---------------------------------------------------------------------------
@@ -218,9 +234,12 @@ def isomorphic_prune(model, calib_loader, target_macs_g, device, args):
       - Taylor importance within each group ranks which channels to drop
     Binary search finds r_mlp that hits target MACs.
     """
-    target_macs = target_macs_g * 1e9
-    criterion   = nn.CrossEntropyLoss()
+    target_macs   = target_macs_g * 1e9
+    criterion     = nn.CrossEntropyLoss()
     example_input = torch.randn(1, 3, args.val_crop, args.val_crop, device=device)
+
+    # Read head structure once — used for round_to and post-step fix
+    orig_num_heads = model.blocks[0].attn.num_heads   # 6 for DeiT-Small
 
     # ── Binary search using fast MagnitudeImportance (no backward needed) ────
     def try_ratio(r_mlp):
@@ -236,8 +255,10 @@ def isomorphic_prune(model, calib_loader, target_macs_g, device, args):
             pruning_ratio_dict=prd,
             ignored_layers=_build_ignored(m),
             iterative_steps=1,
+            round_to=orig_num_heads,   # keeps new_embed divisible by num_heads
         )
         pruner.step()
+        _fix_attn_heads(m, orig_num_heads)   # update head_dim after QKV shrinks
         macs, _ = count_macs(m, device, args.val_crop)
         del m, pruner
         return macs
@@ -278,8 +299,10 @@ def isomorphic_prune(model, calib_loader, target_macs_g, device, args):
         pruning_ratio_dict=prd,
         ignored_layers=_build_ignored(model),
         iterative_steps=1,
+        round_to=orig_num_heads,
     )
     final_pruner.step()
+    _fix_attn_heads(model, orig_num_heads)
     model.zero_grad()
 
     return model, best_r_mlp, best_r_attn
