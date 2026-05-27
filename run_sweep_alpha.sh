@@ -17,8 +17,8 @@ EPOCHS=20
 BASE_DIR="/work/hdd/bdjd/hypergraph_pruning/results"
 
 # ---- edit these after sweeps 1 & 2 ----
-BEST_SMIN=0.15
-BEST_THETA=0.3
+BEST_SMIN=0.40    # removes blocks 3,4,5 (calibrated from sensitivity data)
+BEST_THETA=0.05   # creates multiple groups (calibrated from Taylor score spread)
 
 sbatch_run() {
     local name=$1 ALPHA=$2 ETHR=$3

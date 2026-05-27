@@ -14,7 +14,7 @@ EPOCHS=20
 BASE_DIR="/work/hdd/bdjd/hypergraph_pruning/results"
 
 # ---- edit after sweep 1 completes ----
-BEST_SMIN=0.15    # placeholder; update from sweep_smin results
+BEST_SMIN=0.40    # placeholder; update from sweep_smin results
 
 sbatch_run() {
     local name=$1 S_MIN=$2 THETA=$3 ALPHA=$4 ETHR=$5
@@ -47,25 +47,36 @@ MODE=${1:-smin}
 
 if [ "$MODE" = "smin" ]; then
     echo "=== Sweep 1: S_min (theta=1.0, alpha=0.0) ==="
-    # theta=1.0 = isomorphic grouping, so this isolates S_min alone
-    sbatch_run "sweep_smin_0.00"  0.00  1.0  0.0  0.3
-    sbatch_run "sweep_smin_0.05"  0.05  1.0  0.0  0.3
-    sbatch_run "sweep_smin_0.10"  0.10  1.0  0.0  0.3
-    sbatch_run "sweep_smin_0.15"  0.15  1.0  0.0  0.3
-    sbatch_run "sweep_smin_0.20"  0.20  1.0  0.0  0.3
-    sbatch_run "sweep_smin_0.25"  0.25  1.0  0.0  0.3
+    # Sensitivity range from calibration: min=0.361 (block4), so S_min must
+    # exceed 0.361 to trigger depth pruning at all.
+    # 0.37 → removes block 4 only (1 block)
+    # 0.40 → removes blocks 3,4,5 (3 blocks)
+    # 0.43 → removes blocks 3,4,5,6 (4 blocks)
+    # 0.46 → removes blocks 3,4,5,6,7 (5 blocks)
+    # 0.50 → removes blocks 2,3,4,5,6,7,8,11 (8 blocks — aggressive)
+    sbatch_run "sweep_smin_0.00"  0.00  1.0  0.0  0.3   # iso baseline (no depth pruning)
+    sbatch_run "sweep_smin_0.37"  0.37  1.0  0.0  0.3   # removes 1 block
+    sbatch_run "sweep_smin_0.40"  0.40  1.0  0.0  0.3   # removes 3 blocks
+    sbatch_run "sweep_smin_0.43"  0.43  1.0  0.0  0.3   # removes 4 blocks
+    sbatch_run "sweep_smin_0.46"  0.46  1.0  0.0  0.3   # removes 5 blocks
+    sbatch_run "sweep_smin_0.50"  0.50  1.0  0.0  0.3   # removes 8 blocks
     echo ""
     echo "After these finish, pick best S_min then run: bash run_sweep_smin_theta.sh theta"
 
 elif [ "$MODE" = "theta" ]; then
     echo "=== Sweep 2: theta (S_min=${BEST_SMIN}, alpha=0.0) ==="
-    # theta=1.0 is the isomorphic baseline; theta=0.0 gives each block its own ratio
-    sbatch_run "sweep_theta_0.0"  ${BEST_SMIN}  0.0  0.0  0.3   # max heterogeneity
-    sbatch_run "sweep_theta_0.1"  ${BEST_SMIN}  0.1  0.0  0.3
-    sbatch_run "sweep_theta_0.2"  ${BEST_SMIN}  0.2  0.0  0.3
-    sbatch_run "sweep_theta_0.3"  ${BEST_SMIN}  0.3  0.0  0.3
-    sbatch_run "sweep_theta_0.5"  ${BEST_SMIN}  0.5  0.0  0.3
-    sbatch_run "sweep_theta_1.0"  ${BEST_SMIN}  1.0  0.0  0.3   # isomorphic (no grouping)
+    # Taylor scores are nearly uniform across blocks (edge weights >0.84),
+    # so theta must be very small to create multiple groups.
+    # theta=1.0 → all blocks in one group (isomorphic baseline)
+    # theta=0.10 → may split into 2-3 groups
+    # theta=0.05 → finer split
+    # theta=0.02 → each block nearly its own group
+    sbatch_run "sweep_theta_0.02" ${BEST_SMIN}  0.02  0.0  0.3
+    sbatch_run "sweep_theta_0.05" ${BEST_SMIN}  0.05  0.0  0.3
+    sbatch_run "sweep_theta_0.10" ${BEST_SMIN}  0.10  0.0  0.3
+    sbatch_run "sweep_theta_0.15" ${BEST_SMIN}  0.15  0.0  0.3
+    sbatch_run "sweep_theta_0.20" ${BEST_SMIN}  0.20  0.0  0.3
+    sbatch_run "sweep_theta_1.0"  ${BEST_SMIN}  1.0   0.0  0.3   # isomorphic (no grouping)
 
 else
     echo "Usage: bash run_sweep_smin_theta.sh [smin|theta]"

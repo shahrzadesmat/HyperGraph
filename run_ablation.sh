@@ -48,11 +48,15 @@ PYTHONUNBUFFERED=1 python run.py \
     echo "[Submitted] ${name}  S_min=${S_MIN}  theta=${THETA}  alpha=${ALPHA}"
 }
 
-# Ablation ladder — add one novel component at a time
-sbatch_run "iso_baseline"  0.00  1.0  0.0   # isomorphic pruning (no novel params)
-sbatch_run "plus_smin"     0.15  1.0  0.0   # + depth pruning via sensitivity
-sbatch_run "plus_theta"    0.15  0.3  0.0   # + per-group width ratios
-sbatch_run "plus_alpha"    0.15  0.3  0.3   # + functional-coupling boost (full method)
+# Ablation ladder — add one novel component at a time.
+# S_min calibrated from sensitivity data: min block sensitivity=0.361,
+# so S_min=0.40 removes the 3 least sensitive blocks (3,4,5).
+# theta calibrated from Taylor score spread: scores nearly uniform,
+# so theta=0.05 is needed to create meaningful groups.
+sbatch_run "iso_baseline"  0.00  1.0   0.0   # isomorphic pruning (no novel params)
+sbatch_run "plus_smin"     0.40  1.0   0.0   # + depth pruning (removes blocks 3,4,5)
+sbatch_run "plus_theta"    0.40  0.05  0.0   # + per-group width ratios
+sbatch_run "plus_alpha"    0.40  0.05  0.3   # + functional-coupling boost (full method)
 
 echo ""
 echo "Check progress: squeue -u \$USER"
