@@ -1,17 +1,24 @@
 """
-Isomorphic pruning baseline — replicates the approach from arxiv 2407.04616.
+Isomorphic pruning baseline — faithful replication of arxiv 2407.04616.
 
-Uniform ratio across all attention blocks (shared embed_dim head pruning).
-Uniform ratio across all MLP blocks (per-block independent width pruning).
-Taylor importance criterion: |grad × weight| summed over output neurons.
-No S_min, no theta, no alpha — all blocks pruned equally.
+Key property: layers of the same structural type (isomorphic structures) get
+the same pruning ratio.  Different structural types get different ratios.
 
-Usage:
-  python run_iso_baseline.py --data_path /path/to/imagenet \
-      --target_macs_g 2.5 --epochs 20 --output_dir ./results/iso_baseline
+  Group 1 — MLP hidden dim : r_mlp  (binary-searched to hit target MACs)
+  Group 2 — Attention QKV  : r_attn = r_mlp * HEAD_SCALE  (always smaller)
+
+HEAD_SCALE=0.2 matches the paper's DeiT-Small run (0.1/0.5).
+
+Within each group every block gets exactly r — not a global budget distributed
+by importance — so all 12 MLP blocks get the same ratio (truly isomorphic).
+global_pruning=False enforces this; global_pruning=True would let importance
+redistribute the budget across blocks unevenly.
+
+No S_min, no theta, no alpha.
 """
 
 import argparse
+import copy
 import json
 import math
 import os
@@ -28,31 +35,34 @@ from torchvision.datasets import ImageFolder
 from tqdm import tqdm
 
 
+HEAD_SCALE = 0.2   # r_attn = r_mlp * HEAD_SCALE  (paper: 0.1/0.5 for DeiT-Small)
+
+
 # ---------------------------------------------------------------------------
 # Args
 # ---------------------------------------------------------------------------
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--model",          default="deit_small_patch16_224")
-    p.add_argument("--pretrained",     action="store_true", default=True)
-    p.add_argument("--ckpt",           default=None)
-    p.add_argument("--data_path",      required=True)
-    p.add_argument("--val_resize",     type=int, default=256)
-    p.add_argument("--val_crop",       type=int, default=224)
-    p.add_argument("--batch_size",     type=int, default=64)
-    p.add_argument("--num_workers",    type=int, default=4)
-    p.add_argument("--calib_size",     type=int, default=1024)
-    p.add_argument("--calib_batch",    type=int, default=64)
-    p.add_argument("--target_macs_g",  type=float, required=True)
-    p.add_argument("--epochs",         type=int,   default=30)
-    p.add_argument("--lr",             type=float, default=1e-4)
-    p.add_argument("--weight_decay",   type=float, default=0.05)
-    p.add_argument("--warmup_epochs",  type=int,   default=3)
-    p.add_argument("--label_smoothing",type=float, default=0.1)
-    p.add_argument("--output_dir",     default="./results/iso_baseline")
-    p.add_argument("--seed",           type=int,   default=42)
-    p.add_argument("--skip_finetune",  action="store_true")
+    p.add_argument("--model",           default="deit_small_patch16_224")
+    p.add_argument("--pretrained",      action="store_true", default=True)
+    p.add_argument("--ckpt",            default=None)
+    p.add_argument("--data_path",       required=True)
+    p.add_argument("--val_resize",      type=int, default=256)
+    p.add_argument("--val_crop",        type=int, default=224)
+    p.add_argument("--batch_size",      type=int, default=64)
+    p.add_argument("--num_workers",     type=int, default=4)
+    p.add_argument("--calib_size",      type=int, default=1024)
+    p.add_argument("--calib_batch",     type=int, default=64)
+    p.add_argument("--target_macs_g",   type=float, required=True)
+    p.add_argument("--epochs",          type=int,   default=30)
+    p.add_argument("--lr",              type=float, default=1e-4)
+    p.add_argument("--weight_decay",    type=float, default=0.05)
+    p.add_argument("--warmup_epochs",   type=int,   default=3)
+    p.add_argument("--label_smoothing", type=float, default=0.1)
+    p.add_argument("--output_dir",      default="./results/iso_paper_baseline")
+    p.add_argument("--seed",            type=int,   default=42)
+    p.add_argument("--skip_finetune",   action="store_true")
     return p.parse_args()
 
 
@@ -172,35 +182,7 @@ def finetune(model, train_loader, val_loader, args, device):
 
 
 # ---------------------------------------------------------------------------
-# Taylor importance: |grad × weight| summed over output neurons
-# ---------------------------------------------------------------------------
-
-def compute_taylor_importance(model, calib_loader, criterion, device):
-    """
-    Run one pass over calibration data, accumulate |grad * weight| per parameter.
-    Returns a dict: module_name -> 1-D tensor of per-output-neuron importance.
-    """
-    model.train()
-    model.zero_grad()
-
-    for images, labels in tqdm(calib_loader, desc="Taylor grads", leave=False):
-        images, labels = images.to(device), labels.to(device)
-        loss = criterion(model(images), labels)
-        loss.backward()
-
-    importance = {}
-    for name, m in model.named_modules():
-        if isinstance(m, nn.Linear) and m.weight.grad is not None:
-            # sum over input dimension → per-output-neuron score
-            imp = (m.weight.grad * m.weight.data).abs().sum(dim=1)
-            importance[name] = imp.detach().cpu()
-
-    model.zero_grad()
-    return importance
-
-
-# ---------------------------------------------------------------------------
-# Isomorphic pruning
+# MAC counter
 # ---------------------------------------------------------------------------
 
 def count_macs(model, device, crop_size=224):
@@ -209,128 +191,98 @@ def count_macs(model, device, crop_size=224):
     return macs, params
 
 
-def isomorphic_prune(model, calib_loader, base_macs, target_macs_g, device, args):
+# ---------------------------------------------------------------------------
+# Isomorphic pruning
+# ---------------------------------------------------------------------------
+
+def _build_ignored(model):
+    ign = [m for m in model.modules() if isinstance(m, nn.LayerNorm)]
+    if hasattr(model, 'patch_embed'):
+        ign += list(model.patch_embed.modules())
+    if hasattr(model, 'head') and isinstance(model.head, nn.Linear):
+        ign.append(model.head)
+    return ign
+
+
+def _get_qkv_modules(model):
+    return [block.attn.qkv for block in model.blocks
+            if hasattr(block, 'attn') and hasattr(block.attn, 'qkv')]
+
+
+def isomorphic_prune(model, calib_loader, target_macs_g, device, args):
     """
-    Replicate arxiv 2407.04616 isomorphic pruning:
-      - uniform ratio r_attn for all attention projection layers  (global embed_dim)
-      - uniform ratio r_mlp  for all MLP fc layers                (per-block independent)
-      - Taylor importance to select which neurons to keep
-
-    We use torch_pruning's MagnitudeImportance as a proxy that is equivalent
-    to Taylor when run after backward (grads are already accumulated).
-
-    Strategy:
-      1. Binary-search a single pruning ratio r in [0, MAX_R].
-      2. Apply r uniformly to both attention (global) and MLP (per-block).
-      3. Stop when MACs ≤ target.
+    True isomorphic pruning:
+      - MLP hidden dim group  → ratio r_mlp  (same for all 12 blocks)
+      - Attention QKV group   → ratio r_attn = r_mlp * HEAD_SCALE (same for all 12)
+      - global_pruning=False  → each block gets exactly its ratio (not redistributed)
+      - Taylor importance within each group ranks which channels to drop
+    Binary search finds r_mlp that hits target MACs.
     """
     target_macs = target_macs_g * 1e9
     criterion   = nn.CrossEntropyLoss()
-
-    # Accumulate Taylor gradients
-    imp_scores = compute_taylor_importance(model, calib_loader, criterion, device)
-
-    # We use torch_pruning's GroupNormImportance wrapper to handle linked groups.
-    # For isomorphic ViT pruning we apply a single global ratio.
-    imp = tp.importance.GroupTaylorImportance()
-
-    # Build DG with ignored layers
     example_input = torch.randn(1, 3, args.val_crop, args.val_crop, device=device)
-    ignored = []
-    for m in model.modules():
-        if isinstance(m, nn.LayerNorm):
-            ignored.append(m)
-    # patch embedding + classifier head stay full
-    if hasattr(model, 'patch_embed'):
-        ignored += list(model.patch_embed.modules())
-    if hasattr(model, 'head') and isinstance(model.head, nn.Linear):
-        ignored.append(model.head)
 
-    pruner = tp.pruner.MetaPruner(
-        model,
-        example_input,
-        importance=imp,
-        global_pruning=True,        # uniform ratio across all coupled groups
-        pruning_ratio=0.0,          # will be updated per iteration
-        ignored_layers=ignored,
-        iterative_steps=1,
-    )
-
-    # Binary search for the ratio that hits target MACs
-    lo, hi = 0.0, 0.85
-    best_ratio = 0.0
-    for _ in range(20):
-        mid = (lo + hi) / 2.0
-        # clone model for trial
-        import copy
-        trial_model = copy.deepcopy(model)
-
-        trial_input = torch.randn(1, 3, args.val_crop, args.val_crop, device=device)
-        trial_ignored = []
-        for m in trial_model.modules():
-            if isinstance(m, nn.LayerNorm):
-                trial_ignored.append(m)
-        if hasattr(trial_model, 'patch_embed'):
-            trial_ignored += list(trial_model.patch_embed.modules())
-        if hasattr(trial_model, 'head') and isinstance(trial_model.head, nn.Linear):
-            trial_ignored.append(trial_model.head)
-
-        trial_pruner = tp.pruner.MetaPruner(
-            trial_model,
-            trial_input,
+    # ── Binary search using fast MagnitudeImportance (no backward needed) ────
+    def try_ratio(r_mlp):
+        r_attn = r_mlp * HEAD_SCALE
+        m = copy.deepcopy(model).to(device)
+        prd = {qkv: r_attn for qkv in _get_qkv_modules(m)}
+        pruner = tp.pruner.MetaPruner(
+            m,
+            torch.randn(1, 3, args.val_crop, args.val_crop, device=device),
             importance=tp.importance.MagnitudeImportance(p=1),
-            global_pruning=True,
-            pruning_ratio=mid,
-            ignored_layers=trial_ignored,
+            global_pruning=False,
+            pruning_ratio=r_mlp,
+            pruning_ratio_dict=prd,
+            ignored_layers=_build_ignored(m),
             iterative_steps=1,
         )
-        trial_pruner.step()
-        trial_macs, _ = count_macs(trial_model, device, args.val_crop)
+        pruner.step()
+        macs, _ = count_macs(m, device, args.val_crop)
+        del m, pruner
+        return macs
 
-        if trial_macs <= target_macs:
-            best_ratio = mid
+    lo, hi = 0.0, 0.85
+    best_r_mlp = 0.0
+    for _ in range(20):
+        mid = (lo + hi) / 2.0
+        if try_ratio(mid) <= target_macs:
+            best_r_mlp = mid
             hi = mid
         else:
             lo = mid
 
-        del trial_model, trial_pruner
-
-    print(f"[Iso] Binary search → pruning_ratio={best_ratio:.4f}  "
+    best_r_attn = best_r_mlp * HEAD_SCALE
+    print(f"[Iso] Binary search → r_mlp={best_r_mlp:.4f}  r_attn={best_r_attn:.4f}  "
           f"(target={target_macs_g:.2f}G)")
 
-    # Apply the found ratio with Taylor importance on the real model
-    # Re-accumulate gradients (fresh pass)
-    imp_scores = compute_taylor_importance(model, calib_loader, criterion, device)
+    # ── Accumulate real Taylor gradients for final pruning ───────────────────
+    # Keep grads alive — GroupTaylorImportance reads .grad directly
+    model.train()
+    model.zero_grad()
+    for images, labels in tqdm(calib_loader, desc="Taylor grads", leave=False):
+        images, labels = images.to(device), labels.to(device)
+        loss = criterion(model(images), labels)
+        loss.backward()
+    # Do NOT zero_grad here
 
-    # Patch model linear weights with accumulated grads so GroupTaylorImportance works
-    for name, m in model.named_modules():
-        if isinstance(m, nn.Linear) and name in imp_scores:
-            m.weight.grad = (imp_scores[name].unsqueeze(1)
-                             .expand_as(m.weight)
-                             .to(device))
-
-    final_ignored = []
-    for m in model.modules():
-        if isinstance(m, nn.LayerNorm):
-            final_ignored.append(m)
-    if hasattr(model, 'patch_embed'):
-        final_ignored += list(model.patch_embed.modules())
-    if hasattr(model, 'head') and isinstance(model.head, nn.Linear):
-        final_ignored.append(model.head)
+    # ── Apply final pruning with Taylor importance ────────────────────────────
+    prd = {qkv: best_r_attn for qkv in _get_qkv_modules(model)}
 
     final_pruner = tp.pruner.MetaPruner(
         model,
         example_input,
-        importance=imp,
-        global_pruning=True,
-        pruning_ratio=best_ratio,
-        ignored_layers=final_ignored,
+        importance=tp.importance.GroupTaylorImportance(),
+        global_pruning=False,
+        pruning_ratio=best_r_mlp,
+        pruning_ratio_dict=prd,
+        ignored_layers=_build_ignored(model),
         iterative_steps=1,
     )
     final_pruner.step()
     model.zero_grad()
 
-    return model, best_ratio
+    return model, best_r_mlp, best_r_attn
 
 
 # ---------------------------------------------------------------------------
@@ -362,13 +314,13 @@ def main():
     print(f"  Accuracy={base_acc:.4f}  Loss={base_loss:.4f}")
 
     print(f"\n[Iso Prune] target_macs_g={args.target_macs_g}")
-    model, best_ratio = isomorphic_prune(
-        model, calib_loader, base_macs, args.target_macs_g, device, args)
+    model, best_r_mlp, best_r_attn = isomorphic_prune(
+        model, calib_loader, args.target_macs_g, device, args)
 
     pruned_macs, pruned_params = count_macs(model, device, args.val_crop)
-    actual_ratio = 1.0 - pruned_macs / base_macs
+    actual_reduction = 1.0 - pruned_macs / base_macs
     print(f"\n[Pruned]  MACs={pruned_macs/1e9:.3f}G  Params={pruned_params/1e6:.1f}M  "
-          f"Reduction={actual_ratio*100:.1f}%")
+          f"Reduction={actual_reduction*100:.1f}%")
 
     print("\n[Zero-shot] Evaluating pruned model...")
     zs_acc, zs_loss = evaluate(model, val_loader, device)
@@ -380,18 +332,20 @@ def main():
         ft_acc = finetune(model, train_loader, val_loader, args, device)
 
     results = {
-        "model":              args.model,
-        "method":             "isomorphic",
-        "pruning_ratio":      round(best_ratio, 4),
-        "target_macs_g":      args.target_macs_g,
-        "baseline_macs_g":    round(base_macs / 1e9, 4),
-        "pruned_macs_g":      round(pruned_macs / 1e9, 4),
-        "mac_reduction":      round(actual_ratio, 4),
-        "baseline_params_m":  round(base_params / 1e6, 2),
-        "pruned_params_m":    round(pruned_params / 1e6, 2),
-        "baseline_acc":       round(base_acc, 4),
-        "zeroshot_acc":       round(zs_acc, 4),
-        "finetuned_acc":      round(ft_acc, 4) if ft_acc is not None else None,
+        "model":             args.model,
+        "method":            "isomorphic",
+        "r_mlp":             round(best_r_mlp, 4),
+        "r_attn":            round(best_r_attn, 4),
+        "head_scale":        HEAD_SCALE,
+        "target_macs_g":     args.target_macs_g,
+        "baseline_macs_g":   round(base_macs / 1e9, 4),
+        "pruned_macs_g":     round(pruned_macs / 1e9, 4),
+        "mac_reduction":     round(actual_reduction, 4),
+        "baseline_params_m": round(base_params / 1e6, 2),
+        "pruned_params_m":   round(pruned_params / 1e6, 2),
+        "baseline_acc":      round(base_acc, 4),
+        "zeroshot_acc":      round(zs_acc, 4),
+        "finetuned_acc":     round(ft_acc, 4) if ft_acc is not None else None,
     }
 
     out_json = os.path.join(args.output_dir, "results.json")
@@ -400,9 +354,8 @@ def main():
 
     print("\n" + "=" * 60)
     print(f"  Model          : {args.model}")
-    print(f"  Method         : isomorphic (uniform Taylor, no S_min/theta/alpha)")
-    print(f"  Pruning ratio  : {best_ratio:.4f}")
-    print(f"  MACs           : {base_macs/1e9:.3f}G -> {pruned_macs/1e9:.3f}G  ({actual_ratio*100:.1f}% off)")
+    print(f"  Method         : isomorphic (MLP={best_r_mlp:.3f}, Attn={best_r_attn:.3f})")
+    print(f"  MACs           : {base_macs/1e9:.3f}G -> {pruned_macs/1e9:.3f}G  ({actual_reduction*100:.1f}% off)")
     print(f"  Params         : {base_params/1e6:.1f}M -> {pruned_params/1e6:.1f}M")
     print(f"  Baseline acc   : {base_acc:.4f}")
     print(f"  Zero-shot acc  : {zs_acc:.4f}  (drop: {(base_acc-zs_acc)*100:.2f}pp)")
@@ -411,9 +364,7 @@ def main():
     print(f"  Results saved  : {out_json}")
     print("=" * 60)
 
-    pruned_path = os.path.join(args.output_dir, "pruned_model.pth")
-    torch.save(model, pruned_path)
-    print(f"  Pruned model   : {pruned_path}")
+    torch.save(model, os.path.join(args.output_dir, "pruned_model.pth"))
 
 
 if __name__ == "__main__":
