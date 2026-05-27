@@ -66,6 +66,9 @@ def parse_args():
     p.add_argument("--edge_threshold",  type=float, default=0.3,
                    help="Min importance similarity for a functional edge to form. "
                         "Higher = sparser graph (fewer edges, stronger signal per edge).")
+    p.add_argument("--head_scale",      type=float, default=0.2,
+                   help="r_attn_base = r_mlp_base * head_scale. "
+                        "0.2 matches VainF DeiT-Small (head_dim_ratio=0.1, mlp_ratio=0.5).")
 
     # Fine-tuning
     p.add_argument("--epochs",         type=int,   default=30)
@@ -259,6 +262,7 @@ def main():
         theta           = args.theta,
         alpha           = args.alpha,
         edge_threshold  = args.edge_threshold,
+        head_scale      = args.head_scale,
     )
 
     # --- prune ---
@@ -289,6 +293,7 @@ def main():
         "S_min":           args.S_min,
         "theta":           args.theta,
         "alpha":           args.alpha,
+        "head_scale":      args.head_scale,
         "edge_threshold":  args.edge_threshold,
         "target_macs_g":  args.target_macs_g,
         "baseline_macs_g":  round(base_macs / 1e9, 4),

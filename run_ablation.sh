@@ -11,6 +11,8 @@ MODEL="deit_small_patch16_224"
 EPOCHS=20
 BASE_DIR="/work/hdd/bdjd/hypergraph_pruning/results"
 
+HEAD_SCALE=0.2   # r_attn_base = r_mlp_base * HEAD_SCALE (matches VainF DeiT-Small)
+
 sbatch_run() {
     local name=$1
     local S_MIN=$2
@@ -19,6 +21,7 @@ sbatch_run() {
     local outdir="${BASE_DIR}/${name}"
 
     mkdir -p "$outdir"
+    rm -f "${outdir}/results.json"   # clear stale results
 
     sbatch --job-name="hg_${name}" \
            --partition=gpuA100x4 \
@@ -42,10 +45,11 @@ PYTHONUNBUFFERED=1 python run.py \
   --S_min         ${S_MIN} \
   --theta         ${THETA} \
   --alpha         ${ALPHA} \
+  --head_scale    ${HEAD_SCALE} \
   --epochs        ${EPOCHS} \
   --output_dir    ${outdir}
 "
-    echo "[Submitted] ${name}  S_min=${S_MIN}  theta=${THETA}  alpha=${ALPHA}"
+    echo "[Submitted] ${name}  S_min=${S_MIN}  theta=${THETA}  alpha=${ALPHA}  head_scale=${HEAD_SCALE}"
 }
 
 # Ablation ladder — add one novel component at a time.

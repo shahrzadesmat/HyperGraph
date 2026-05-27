@@ -5,8 +5,11 @@ Three parameters that modify the dependency graph:
   theta  -- merge threshold: controls which blocks share a pruning ratio
   alpha  -- functional coupling: lets important neighbours boost a block's importance
 
-When S_min=0, theta=1.0, alpha=0.0 the output reproduces standard isomorphic pruning
-(one ratio for all attention blocks, one ratio for all MLP blocks).
+Foundation (S_min=0, theta=1.0, alpha=0.0):
+  Reproduces the VainF isomorphic pruning structure — one group for all attn blocks
+  at r_attn_base, one group for all MLP blocks at r_mlp_base, where
+  r_attn_base = r_mlp_base * head_scale (default 0.2, matching VainF DeiT-Small).
+  Our three parameters extend this foundation.
 """
 
 import math
@@ -223,19 +226,27 @@ def allocate_ratios(groups: Dict[str, List[List[int]]],
                      sensitivities: Dict[int, float],
                      surviving_blocks: Dict[int, float],
                      baseline_macs_g: float,
-                     target_macs_g: float) -> Dict[int, Dict[str, float]]:
+                     target_macs_g: float,
+                     head_scale: float = 0.2) -> Dict[int, Dict[str, float]]:
     """
     Given theta-groups and boosted importance scores, compute one pruning
     ratio per group and assign it to each block in that group.
 
-    Less important groups get higher pruning ratios.
-    Returns {block_idx: {"attn": ratio, "mlp": ratio}}.
+    Foundation (matches VainF isomorphic pruning):
+        r_mlp_base  — base ratio for all MLP groups
+        r_attn_base = r_mlp_base * head_scale  — base ratio for attn groups
+                      (head_scale=0.2 matches VainF DeiT-Small: 0.1/0.5)
 
-    Budget accounting:
-        total_reduction = 1 - target/baseline
-        depth savings   = n_removed / n_total  (blocks already deleted)
-        width r_base    = (total_reduction × n_total - n_removed) / n_survive
-        → only the remaining MAC budget is distributed via width pruning
+    Our three parameters modulate around this foundation:
+        S_min  → depth_factor changes (fewer blocks → higher r_mlp_base)
+        theta  → multiple groups each weighted by norm_imp around their base
+        alpha  → boosted_scores change norm_imp, shifting ratios toward
+                 important blocks
+
+    Less important groups get higher pruning ratios (r = base × (2 − norm_imp)).
+    Budget proof: mean(2 − norm_imp) = 1 → mean r = r_base ✓
+
+    Returns {block_idx: {"attn": ratio, "mlp": ratio}}.
     """
     n_total   = len(sensitivities)
     n_survive = len(surviving_blocks)
@@ -243,50 +254,44 @@ def allocate_ratios(groups: Dict[str, List[List[int]]],
     if n_survive == 0:
         return {}
 
-    target_ratio  = target_macs_g / baseline_macs_g
-    depth_factor  = n_survive / n_total   # fraction of blocks still alive
+    target_ratio = target_macs_g / baseline_macs_g
+    depth_factor = n_survive / n_total
 
-    # MACs scale as (1-r)^2, not (1-r), because pruning embed_dim changes
-    # both the input and output of every downstream linear layer simultaneously:
-    #   depth_factor × (1-r)^2 = target_ratio
-    #   r = 1 - sqrt(target_ratio / depth_factor)
-    r_base = max(0.0, 1.0 - math.sqrt(max(0.0, target_ratio / depth_factor)))
-    r_base = min(r_base, MAX_PRUNE_RATIO)
+    # MACs scale as (1-r)^2 because pruning embed_dim changes both input and
+    # output of every downstream linear simultaneously.
+    # Solve: depth_factor × (1 - r_mlp_base)^2 = target_ratio
+    r_mlp_base  = max(0.0, 1.0 - math.sqrt(max(0.0, target_ratio / depth_factor)))
+    r_mlp_base  = min(r_mlp_base, MAX_PRUNE_RATIO)
+    r_attn_base = r_mlp_base * head_scale   # attn pruned proportionally less
 
     ratios: Dict[int, Dict] = {}
 
-    def _group_ratio(group_blocks: List[int], key: str) -> float:
+    def _group_ratio(group_blocks: List[int], key: str, base_r: float) -> float:
         live = [i for i in group_blocks if i in surviving_blocks]
-        if not live:
-            return 0.0
-        if r_base == 0.0:
-            # depth pruning already met the MAC budget; skip width pruning
+        if not live or base_r == 0.0:
             return 0.0
         total_imp = sum(boosted_scores[i][key] for i in surviving_blocks) + 1e-8
         avg_imp   = sum(boosted_scores[i][key] for i in live) / len(live)
-        # norm_imp = 1.0 when this group has exactly average importance
         norm_imp  = avg_imp / total_imp * len(surviving_blocks)
-        # r = r_base × (2 − norm_imp):
-        #   norm_imp = 1.0 → r = r_base  (average group → exactly the width target)
-        #   norm_imp → 0   → r = 2×r_base (unimportant group pruned twice as hard)
-        #   norm_imp → 2   → r ≈ 0        (very important group barely pruned)
-        # Proof budget holds: mean over groups of (2 − norm_imp) = 2 − 1 = 1 → mean r = r_base ✓
-        raw = r_base * (2.0 - norm_imp)
+        raw = base_r * (2.0 - norm_imp)
         return max(0.0, min(raw, MAX_PRUNE_RATIO))
 
     for group in groups["attn_groups"]:
-        r = _group_ratio(group, "attn")
+        r = _group_ratio(group, "attn", r_attn_base)
         for i in group:
             if i not in ratios:
                 ratios[i] = {}
             ratios[i]["attn"] = r
 
     for group in groups["mlp_groups"]:
-        r = _group_ratio(group, "mlp")
+        r = _group_ratio(group, "mlp", r_mlp_base)
         for i in group:
             if i not in ratios:
                 ratios[i] = {}
             ratios[i]["mlp"] = r
+
+    print(f"\n[Hypergraph] Base ratios: r_mlp_base={r_mlp_base:.3f}  "
+          f"r_attn_base={r_attn_base:.3f}  (head_scale={head_scale})")
 
     return ratios
 
@@ -304,14 +309,15 @@ def build_hypergraph(model: nn.Module,
                       S_min: float = 0.0,
                       theta: float = 1.0,
                       alpha: float = 0.0,
-                      edge_threshold: float = 0.3) -> Dict:
+                      edge_threshold: float = 0.3,
+                      head_scale: float = 0.2) -> Dict:
     """
     Full pipeline.  Returns a dict with everything the pruner needs.
 
-    Correctness check:
-        S_min=0, theta=1.0, alpha=0.0  =>  one group for all attn blocks,
-        one group for all MLP blocks, with ratio = f(target_macs).
-        This should reproduce isomorphic pruning.
+    With S_min=0, theta=1.0, alpha=0.0, head_scale=0.2:
+        Reproduces VainF isomorphic pruning — one attn group at r_attn_base,
+        one MLP group at r_mlp_base, r_attn_base = r_mlp_base * 0.2.
+    Each parameter extends this foundation independently.
     """
     # --- S_min: remove redundant blocks ---
     sensitivities    = compute_block_sensitivities(model, calib_loader, device)
@@ -348,7 +354,8 @@ def build_hypergraph(model: nn.Module,
     # --- allocate per-group ratios ---
     ratios = allocate_ratios(
         groups, boosted_scores, sensitivities,
-        surviving_blocks, baseline_macs_g, target_macs_g
+        surviving_blocks, baseline_macs_g, target_macs_g,
+        head_scale=head_scale,
     )
 
     print(f"\n[Hypergraph] Per-block pruning ratios:")
