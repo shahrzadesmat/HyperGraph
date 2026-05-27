@@ -9,6 +9,8 @@ When S_min=0, theta=1.0, alpha=0.0 the output reproduces standard isomorphic pru
 (one ratio for all attention blocks, one ratio for all MLP blocks).
 """
 
+import math
+
 import torch
 import torch.nn as nn
 from typing import Dict, List, Tuple
@@ -235,16 +237,20 @@ def allocate_ratios(groups: Dict[str, List[List[int]]],
         width r_base    = (total_reduction × n_total - n_removed) / n_survive
         → only the remaining MAC budget is distributed via width pruning
     """
-    total_reduction = max(0.0, 1.0 - (target_macs_g / baseline_macs_g))
     n_total   = len(sensitivities)
     n_survive = len(surviving_blocks)
-    n_removed = n_total - n_survive
 
     if n_survive == 0:
         return {}
 
-    # Width-only reduction needed after depth pruning already saved n_removed/n_total
-    r_base = max(0.0, (total_reduction * n_total - n_removed) / n_survive)
+    target_ratio  = target_macs_g / baseline_macs_g
+    depth_factor  = n_survive / n_total   # fraction of blocks still alive
+
+    # MACs scale as (1-r)^2, not (1-r), because pruning embed_dim changes
+    # both the input and output of every downstream linear layer simultaneously:
+    #   depth_factor × (1-r)^2 = target_ratio
+    #   r = 1 - sqrt(target_ratio / depth_factor)
+    r_base = max(0.0, 1.0 - math.sqrt(max(0.0, target_ratio / depth_factor)))
     r_base = min(r_base, MAX_PRUNE_RATIO)
 
     ratios: Dict[int, Dict] = {}
@@ -266,7 +272,7 @@ def allocate_ratios(groups: Dict[str, List[List[int]]],
         #   norm_imp → 2   → r ≈ 0        (very important group barely pruned)
         # Proof budget holds: mean over groups of (2 − norm_imp) = 2 − 1 = 1 → mean r = r_base ✓
         raw = r_base * (2.0 - norm_imp)
-        return max(0.05, min(raw, 0.90))
+        return max(0.0, min(raw, MAX_PRUNE_RATIO))
 
     for group in groups["attn_groups"]:
         r = _group_ratio(group, "attn")

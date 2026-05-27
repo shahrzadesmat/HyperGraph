@@ -25,7 +25,7 @@ sbatch_run() {
            --gres=gpu:1 \
            --cpus-per-task=32 \
            --mem=64G \
-           --time=6:00:00 \
+           --time=12:00:00 \
            --account=bdjd-delta-gpu \
            --output="${outdir}/slurm_%j.out" --error="${outdir}/slurm_%j.err" \
            --export=ALL \
