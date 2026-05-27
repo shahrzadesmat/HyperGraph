@@ -1,0 +1,29 @@
+[01:02:38] Waiting for iso_baseline to finish...
+[02:36:38] iso_baseline done — finetuned_acc=0.6538
+[02:36:38] Waiting for plus_smin to finish...
+[02:36:38] plus_smin done — finetuned_acc=0.6562
+[02:36:38] Waiting for plus_theta to finish...
+[02:36:39] plus_theta done — finetuned_acc=0.6526
+[02:36:39] plus_theta: acc=0.6526  groups=1  theta=0.05
+[02:36:39] plus_theta did not improve (groups=1). Retrying with theta=0.025...
+Submitted batch job 18522786
+[02:36:39] Submitted plus_theta  S_min=0.40 theta=0.025 alpha=0.0
+Submitted batch job 18522787
+[02:36:39] Submitted plus_alpha  S_min=0.40 theta=0.025 alpha=0.3
+[02:36:39] Waiting for plus_theta to finish...
+[04:40:40] plus_theta done — finetuned_acc=0.6594
+[04:40:40] plus_theta: acc=0.6594  groups=6  theta=0.025
+[04:40:40] plus_theta improved with 6 groups. Moving on.
+[04:40:40] Waiting for plus_alpha to finish...
+[04:40:40] plus_alpha done — finetuned_acc=0.6624
+[04:40:40] plus_alpha: acc=0.6624  alpha=0.3
+[04:40:40] plus_alpha improved. Ablation complete!
+
+════════════════════════════════════════
+  ABLATION RESULTS
+════════════════════════════════════════
+  iso_baseline : 0.6538
+  + S_min=0.40 : 0.6562  (delta=+0.0024)
+  + theta=0.025 : 0.6594  (delta=+0.0032)
+  + alpha=0.3   : 0.6624  (delta=+0.0030)
+════════════════════════════════════════
