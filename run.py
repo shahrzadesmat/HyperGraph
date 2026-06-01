@@ -217,6 +217,52 @@ def count_macs(model, device, crop_size=224):
     return macs, params
 
 
+def calibrate_ratios(model, hg, base_ratios, target_macs_g, device, crop_size):
+    """
+    The analytic budget formula in hypergraph.py does not account for the
+    head_scale split (attention prunes far less than MLP), so width pruning
+    alone can miss the MAC target. We binary-search a single multiplier k
+    applied to ALL ratios — this preserves the group structure and the
+    r_attn = head_scale * r_mlp relationship — until pruned MACs hit target.
+
+    Returns a scaled copy of base_ratios.
+    """
+    import copy as _copy
+    target_macs = target_macs_g * 1e9
+    MAX_R = 0.85
+
+    def scaled(k):
+        out = {}
+        for i, d in base_ratios.items():
+            out[i] = {key: min(MAX_R, v * k) for key, v in d.items()}
+        return out
+
+    def macs_for(k):
+        trial = _copy.deepcopy(model).to(device)
+        try:
+            trial = prune_vit(trial, hg, scaled(k), device)
+        except Exception:
+            return float("inf")
+        m, _ = count_macs(trial, device, crop_size)
+        del trial
+        return m
+
+    # If even k=1 already overshoots target (already small enough), search down;
+    # otherwise search up. Bracket k in [0, 4].
+    lo, hi = 0.0, 4.0
+    best_k = 1.0
+    for _ in range(18):
+        mid = (lo + hi) / 2.0
+        if macs_for(mid) <= target_macs:
+            best_k = mid
+            hi = mid
+        else:
+            lo = mid
+
+    print(f"[Calibrate] ratio multiplier k={best_k:.4f} to hit {target_macs_g:.2f}G")
+    return scaled(best_k)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -264,6 +310,12 @@ def main():
         edge_threshold  = args.edge_threshold,
         head_scale      = args.head_scale,
     )
+
+    # --- calibrate ratios to actually hit the MAC target ---
+    print("\n[Calibrate] Binary-searching ratio scale to hit target MACs...")
+    calibrated_ratios = calibrate_ratios(
+        model, hg, hg["ratios"], args.target_macs_g, device, args.val_crop)
+    hg["ratios"] = calibrated_ratios
 
     # --- prune ---
     print("\n[Prune] Applying pruning...")
