@@ -38,6 +38,40 @@ from tqdm import tqdm
 HEAD_SCALE = 0.2   # r_attn = r_mlp * HEAD_SCALE  (paper: 0.1/0.5 for DeiT-Small)
 
 
+import types
+
+def _patched_attn_forward(self, x):
+    """
+    timm's Attention.forward reshapes attention output back to the INPUT
+    embed dim C, which breaks after head-dim pruning (attn output =
+    num_heads*head_dim < C). This patch reshapes to num_heads*head_dim so
+    proj (in_features = num_heads*head_dim) maps it back to the residual dim.
+    """
+    B, N, C = x.shape
+    inner = self.num_heads * self.head_dim
+    qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+    q, k, v = qkv.unbind(0)
+    if hasattr(self, 'q_norm'):
+        q, k = self.q_norm(q), self.k_norm(k)
+    q = q * self.scale
+    attn = q @ k.transpose(-2, -1)
+    attn = attn.softmax(dim=-1)
+    attn = self.attn_drop(attn)
+    x = attn @ v
+    x = x.transpose(1, 2).reshape(B, N, inner)
+    x = self.proj(x)
+    x = self.proj_drop(x)
+    return x
+
+
+def _patch_attention(model):
+    """Bind the patched forward to every attention module so reshape uses
+    num_heads*head_dim instead of the original embed dim."""
+    for block in model.blocks:
+        if hasattr(block, 'attn'):
+            block.attn.forward = types.MethodType(_patched_attn_forward, block.attn)
+
+
 def _fix_attn_heads(model, orig_num_heads):
     """
     After torch_pruning shrinks QKV output channels it does not update
@@ -225,6 +259,14 @@ def _get_qkv_modules(model):
             if hasattr(block, 'attn') and hasattr(block.attn, 'qkv')]
 
 
+def _num_heads_dict(model):
+    """Map each QKV module to its head count so torch_pruning keeps the
+    head structure consistent (embed_dim stays divisible by num_heads)."""
+    return {block.attn.qkv: block.attn.num_heads
+            for block in model.blocks
+            if hasattr(block, 'attn') and hasattr(block.attn, 'qkv')}
+
+
 def isomorphic_prune(model, calib_loader, target_macs_g, device, args):
     """
     True isomorphic pruning:
@@ -255,10 +297,13 @@ def isomorphic_prune(model, calib_loader, target_macs_g, device, args):
             pruning_ratio_dict=prd,
             ignored_layers=_build_ignored(m),
             iterative_steps=1,
-            round_to=orig_num_heads,   # keeps new_embed divisible by num_heads
+            num_heads=_num_heads_dict(m),   # head-aware: keeps embed divisible
+            prune_num_heads=False,          # shrink head_dim, keep head count
+            prune_head_dims=True,
         )
         pruner.step()
         _fix_attn_heads(m, orig_num_heads)   # update head_dim after QKV shrinks
+        _patch_attention(m)                  # fix timm reshape for new head_dim
         macs, _ = count_macs(m, device, args.val_crop)
         del m, pruner
         return macs
@@ -299,10 +344,13 @@ def isomorphic_prune(model, calib_loader, target_macs_g, device, args):
         pruning_ratio_dict=prd,
         ignored_layers=_build_ignored(model),
         iterative_steps=1,
-        round_to=orig_num_heads,
+        num_heads=_num_heads_dict(model),
+        prune_num_heads=False,
+        prune_head_dims=True,
     )
     final_pruner.step()
     _fix_attn_heads(model, orig_num_heads)
+    _patch_attention(model)
     model.zero_grad()
 
     return model, best_r_mlp, best_r_attn
