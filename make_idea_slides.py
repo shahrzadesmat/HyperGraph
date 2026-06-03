@@ -297,35 +297,60 @@ def slide3(prs):
 
 def slide4(prs):
     s = blank(prs)
-    title_rule(s, "What Uniform Pruning Misses", 4)
+    title_rule(s, "What Uniform Pruning Misses")
 
+    sub = add_tb(s, ML, CONT_Y, CW, 320000)
+    fp(sub, "One ratio for every block cannot express three real differences between blocks:",
+       15, bold=True, color=DARK)
+
+    # (num, title, accent, fill, [detail lines], gap_metric, fix_symbol, fix_text)
     cards = [
-        ("1", "Not all blocks are needed", RED, LRED,
-         "Some blocks barely change the output — they could be removed ENTIRELY, "
-         "not just shrunk. Uniform pruning keeps every block."),
-        ("2", "Blocks differ in importance", ORANGE, LORANGE,
-         "A critical block and a near-redundant block get the SAME ratio. "
-         "We over-prune the important one and waste budget on the redundant one."),
-        ("3", "Blocks are functionally coupled", BLUE, LBLUE,
-         "Some blocks rise and fall in importance together. Their pruning "
-         "decisions should influence each other — uniform pruning treats every block in isolation."),
+        ("1", "Some blocks are nearly dead weight", RED, LRED,
+         ["Block sensitivity (output change when a block is bypassed) varies widely —",
+          "a few blocks are close to identity, yet uniform pruning still keeps and shrinks them,",
+          "spending MAC budget on blocks that contribute almost nothing."],
+         "depth ignored", "S_min", "remove them entirely"),
+        ("2", "Blocks are not equally important", ORANGE, LORANGE,
+         ["Taylor importance (|grad × weight|) differs block-to-block. One global ratio",
+          "over-prunes the critical blocks (accuracy drops) and under-prunes the redundant",
+          "ones (budget wasted) — the cut lands in exactly the wrong places."],
+         "width is flat", "θ", "per-group ratios"),
+        ("3", "Block importances are not independent", BLUE, LBLUE,
+         ["Some blocks rise and fall in importance together (their scores are correlated).",
+          "Pruning each block in isolation ignores that a surviving block may depend on a",
+          "neighbour you just pruned — the decisions should inform each other."],
+         "coupling ignored", "α", "functional edges"),
     ]
     cw = CW
-    ch = 1180000
-    cgap = 180000
-    cy = CONT_Y + 120000
-    for i, (num, head, accent, fill, body) in enumerate(cards):
+    ch = 1430000
+    cgap = 150000
+    cy = CONT_Y + 380000
+    chip_w = 2550000
+    for i, (num, head, accent, fill, lines, metric, sym, fix) in enumerate(cards):
         y = cy + i * (ch + cgap)
         add_rect(s, ML, y, cw, ch, fill)
         add_rect(s, ML, y, 150000, ch, accent)
         # number circle
-        add_rect(s, ML + 320000, y + ch/2 - 360000, 720000, 720000, accent, shape=MSO_SHAPE.OVAL)
-        tfn = add_tb(s, ML + 320000, y + ch/2 - 300000, 720000, 600000)
-        fp(tfn, num, 34, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-        # text
-        tf = add_tb(s, ML + 1300000, y + 130000, cw - 1500000, ch - 240000)
-        fp(tf, head, 20, bold=True, color=accent)
-        ap(tf, body, 15, color=BODY, space_before=8)
+        add_rect(s, ML + 300000, y + ch/2 - 340000, 680000, 680000, accent, shape=MSO_SHAPE.OVAL)
+        tfn = add_tb(s, ML + 300000, y + ch/2 - 280000, 680000, 560000)
+        fp(tfn, num, 32, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        # title + detail
+        tf = add_tb(s, ML + 1180000, y + 110000, cw - 1300000 - chip_w, ch - 220000)
+        fp(tf, head, 18, bold=True, color=accent)
+        fp_first = True
+        for ln_ in lines:
+            ap(tf, ln_, 13, color=BODY, space_before=6 if fp_first else 2)
+            fp_first = False
+        # gap metric tag (italic, under title region)
+        tfm = add_tb(s, ML + 1180000, y + ch - 300000, 3000000, 240000)
+        fp(tfm, f"isomorphic: {metric}", 12, italic=True, color=accent)
+        # right "fix" chip
+        chx = ML + cw - chip_w - 120000
+        add_rect(s, chx, y + 150000, chip_w, ch - 300000, WHITE, line_color=accent, line_w=19050)
+        tfc = add_tb(s, chx + 120000, y + 230000, chip_w - 240000, ch - 420000)
+        fp(tfc, "our fix", 11, bold=True, color=BODY)
+        ap(tfc, f"→  {sym}", 24, bold=True, color=accent, space_before=4)
+        ap(tfc, fix, 13, color=DARK, space_before=4)
 
 
 # =============================================================================

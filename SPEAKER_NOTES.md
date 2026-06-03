@@ -72,13 +72,13 @@ Line to say: "same picture as isomorphic, but the budget is now spent where it c
 
 ## Slide 6 — What uniform pruning misses (the gap)
 
-Uniform treatment misses three things — and these motivate our three parameters:
+One ratio for every block cannot express three concrete differences. Each card maps a gap → the parameter that fixes it (right-hand chip).
 
-1. **Not all blocks are needed.** Some barely change the output and could be removed *entirely* (depth), not just shrunk.
-2. **Blocks differ in importance.** One ratio for all → over-prunes the important ones and wastes budget on the redundant ones.
-3. **Blocks are functionally coupled.** Their importance rises and falls together, so their pruning decisions should influence each other.
+1. **Some blocks are nearly dead weight.** Block *sensitivity* (output change when the block is bypassed) varies widely — a few blocks are close to identity, yet uniform pruning still keeps and shrinks them, spending MAC budget on blocks that contribute almost nothing.  *isomorphic: depth ignored* → **fix: S_min** (remove them entirely).
+2. **Blocks are not equally important.** *Taylor importance* (|grad × weight|) differs block-to-block. One global ratio over-prunes the critical blocks (accuracy drops) and under-prunes the redundant ones (budget wasted) — the cut lands in the wrong places.  *isomorphic: width is flat* → **fix: θ** (per-group ratios).
+3. **Block importances are not independent.** Some blocks' importance scores are correlated (rise/fall together). Pruning each in isolation ignores that a surviving block may depend on a neighbour you just pruned.  *isomorphic: coupling ignored* → **fix: α** (functional edges).
 
-Isomorphic pruning treats every block **in isolation** — it can't express any of these.
+Land it: isomorphic treats every block in isolation; our three parameters each remove one of these blind spots.
 
 ---
 
