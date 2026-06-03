@@ -4,13 +4,15 @@ NO results — pure explanation of the idea, in the visual style of the
 Isomorphic Pruning (Fang et al.) figures: clean stacked-box layers, group
 brackets, and node-edge graphs.
 
-6 slides:
+8 slides:
   1. Title / the setup
   2. Background — three ways to rank what to prune (recreates VainF Fig.2)
-  3. Isomorphic pruning in one picture (the baseline we build on)
-  4. The gap — what uniform pruning misses (conceptual, no numbers)
-  5. Our idea — Typed Pruning Hypergraph: structural + functional edges (Fig.3 style)
-  6. Three knobs (S_min, theta, alpha) + punchline: VainF is a special case
+  3. Our method in the same 4-column view (parallels slide 2)
+  4. Isomorphic pruning in one picture (the baseline we build on)
+  5. The gap — what uniform pruning misses (conceptual, no numbers)
+  6. VainF's graph vs our graph (Fig.3 style, side by side)
+  7. The three parameters, defined (S_min, theta, alpha)
+  8. Worked example — building the graph component-by-component
 """
 from pptx import Presentation
 from pptx.util import Emu, Pt
@@ -234,7 +236,7 @@ def slide2(prs):
 
 def slide3(prs):
     s = blank(prs)
-    title_rule(s, "Isomorphic Pruning: One Ratio Per Structure Type", 2)
+    title_rule(s, "Isomorphic Pruning: One Ratio Per Structure Type", 3)
 
     # left panel text
     add_rect(s, 274320, CONT_Y, 5300000, CONT_H, PANEL)
@@ -292,7 +294,7 @@ def slide3(prs):
 
 def slide4(prs):
     s = blank(prs)
-    title_rule(s, "What Uniform Pruning Misses", 3)
+    title_rule(s, "What Uniform Pruning Misses", 4)
 
     cards = [
         ("1", "Not all blocks are needed", RED, LRED,
@@ -327,6 +329,21 @@ def slide4(prs):
 # SLIDE 5 — Our idea: Typed Pruning Hypergraph (Fig.3 style graph)
 # =============================================================================
 
+def _func_arcs(s, cx, node_d, base_y, functional, w, hi, step, label=False):
+    """Draw dashed functional-edge arcs, STAGGERED by span so they don't merge:
+    the widest arc sits highest (outer) and narrower arcs nest inside it."""
+    order = sorted(functional, key=lambda e: -(e[1] - e[0]))   # widest first
+    for rank, (i, j) in enumerate(order):
+        x1 = cx[i] + node_d / 2
+        x2 = cx[j] + node_d / 2
+        ytop = base_y - (hi - rank * step)
+        for (a, b, c, d2) in [(x1, base_y, x1, ytop), (x1, ytop, x2, ytop), (x2, ytop, x2, base_y)]:
+            line(s, a, b, c, d2, color=ORANGE, w=w, dash='dash')
+        if label:
+            tfm = add_tb(s, (x1 + x2) // 2 - 450000, ytop - 220000, 900000, 200000)
+            fp(tfm, "w_ij", 11, bold=True, color=ORANGE, align=PP_ALIGN.CENTER, italic=True)
+
+
 def _graph_panel(s, px, pw, title, title_fill, removed, functional, node_fills, node_top):
     """Draw one block-chain graph panel. removed=set of indices, functional=list
     of (i,j) dashed coupling arcs, node_fills=list of per-node fill colors."""
@@ -335,7 +352,7 @@ def _graph_panel(s, px, pw, title, title_fill, removed, functional, node_fills, 
     fp(tfh, title, 16, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
 
     n = 4
-    node_d = 660000
+    node_d = 820000
     inner = pw - 360000
     node_gap = (inner - n * node_d) // (n - 1)
     x0 = px + 180000
@@ -345,36 +362,24 @@ def _graph_panel(s, px, pw, title, title_fill, removed, functional, node_fills, 
     # residual chain (solid gray) between consecutive nodes
     for i in range(n - 1):
         line(s, cx[i] + node_d, ny + node_d/2, cx[i+1], ny + node_d/2,
-             color=EDGEGRAY, w=20320)
+             color=EDGEGRAY, w=22225)
 
-    # functional dashed arcs (above) — our addition
-    for (i, j) in functional:
-        x1 = cx[i] + node_d/2
-        x2 = cx[j] + node_d/2
-        ytop = ny - 430000
-        for (a, b, c, d2) in [(x1, ny, x1, ytop), (x1, ytop, x2, ytop), (x2, ytop, x2, ny)]:
-            line(s, a, b, c, d2, color=ORANGE, w=19050, dash='dash')
-        tfm = add_tb(s, (x1+x2)//2 - 450000, ytop - 220000, 900000, 200000)
-        fp(tfm, "w_ij", 11, bold=True, color=ORANGE, align=PP_ALIGN.CENTER, italic=True)
+    # functional dashed arcs (above) — our addition; staggered so they don't merge
+    _func_arcs(s, cx, node_d, ny, functional, w=20320, hi=470000, step=210000, label=False)
 
-    # nodes
+    # nodes (clean circles — E_s is explained in the legend)
     for i in range(n):
         if i in removed:
             add_rect(s, cx[i], ny, node_d, node_d, LGRAY, line_color=GRAY,
                      line_w=12700, shape=MSO_SHAPE.OVAL)
-            tfx = add_tb(s, cx[i], ny + node_d/2 - 200000, node_d, 400000)
-            fp(tfx, "✕", 28, bold=True, color=RED, align=PP_ALIGN.CENTER)
-            tfr = add_tb(s, cx[i] - 60000, ny + node_d + 30000, node_d + 120000, 220000)
-            fp(tfr, "removed", 10, color=RED, align=PP_ALIGN.CENTER, italic=True)
+            tfx = add_tb(s, cx[i], ny + node_d/2 - 220000, node_d, 440000)
+            fp(tfx, "✕", 32, bold=True, color=RED, align=PP_ALIGN.CENTER)
+            tfr = add_tb(s, cx[i] - 60000, ny + node_d + 40000, node_d + 120000, 240000)
+            fp(tfr, "removed", 11, color=RED, align=PP_ALIGN.CENTER, italic=True)
         else:
             add_rect(s, cx[i], ny, node_d, node_d, node_fills[i], shape=MSO_SHAPE.OVAL)
-            tfn = add_tb(s, cx[i], ny + node_d/2 - 150000, node_d, 300000)
-            fp(tfn, f"Blk {i}", 12, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-            # structural mini-icon (qkv-proj-mlp coupled) below node
-            sy = ny + node_d + 70000
-            for k, cc in enumerate([SKYBLUE, BLUE, NAVY]):
-                add_rect(s, cx[i] + 55000 + k*180000, sy, 140000, 140000, cc,
-                         line_color=EDGEGRAY, line_w=6350)
+            tfn = add_tb(s, cx[i], ny + node_d/2 - 160000, node_d, 320000)
+            fp(tfn, f"Blk {i}", 14, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
 
 
 def _legend_row(s, x, y, kind, term, defn, term_color):
@@ -398,7 +403,7 @@ def _legend_row(s, x, y, kind, term, defn, term_color):
 
 def slide5(prs):
     s = blank(prs)
-    title_rule(s, "The Key Difference: VainF's Graph  vs  Our Graph", 4)
+    title_rule(s, "The Key Difference: VainF's Graph  vs  Our Graph", 5)
 
     half = SW // 2
     lpx, lpw = ML, half - ML - 120000
@@ -449,7 +454,7 @@ def slide5(prs):
 
 def slide6(prs):
     s = blank(prs)
-    title_rule(s, "The Three Parameters, Defined", 5)
+    title_rule(s, "The Three Parameters, Defined", 6)
 
     # (symbol, name, accent, fill, light_formula_fill, definition, [formula lines], effect)
     cards = [
@@ -523,13 +528,8 @@ def _mini_graph(s, gx, gy, node_d, gap, fills, removed, functional, labels):
         line(s, cx[a] + node_d, gy + node_d/2, cx[b], gy + node_d/2,
              color=EDGEGRAY, w=17780)
 
-    # functional dashed arcs above
-    for (i, j) in functional:
-        x1 = cx[i] + node_d/2
-        x2 = cx[j] + node_d/2
-        ytop = gy - 230000
-        for (a, b, c, d2) in [(x1, gy, x1, ytop), (x1, ytop, x2, ytop), (x2, ytop, x2, gy)]:
-            line(s, a, b, c, d2, color=ORANGE, w=15875, dash='dash')
+    # functional dashed arcs above — staggered so distinct couplings don't merge
+    _func_arcs(s, cx, node_d, gy, functional, w=15875, hi=300000, step=150000, label=False)
 
     # nodes
     for i in range(n):
@@ -546,7 +546,7 @@ def _mini_graph(s, gx, gy, node_d, gap, fills, removed, functional, labels):
 
 def slide7(prs):
     s = blank(prs)
-    title_rule(s, "Worked Example: Building the Graph, One Component at a Time", 6)
+    title_rule(s, "Worked Example: Building the Graph, One Component at a Time", 7)
 
     labels = ["B0", "B1", "B2", "B3", "B4"]
     # illustrative values (to show the mechanism, not measured results)
@@ -598,10 +598,83 @@ def slide7(prs):
        12, color=BODY, italic=True)
 
 
+def slide_ours_view(prs):
+    """Same 4-column view as slide 2, but for OUR method's progression."""
+    s = blank(prs)
+    title_rule(s, "Our Method in the Same View: Extending Isomorphic", 2)
+
+    col_w, gap = 2500000, 480000
+    start_x = ML + 60000
+    top = CONT_Y + 120000
+    bw, bh, bgap = 1700000, 470000, 160000
+    nboxes = 4
+    box_x_off = (col_w - bw) // 2
+
+    headers = ["(a) Pretrained", "(b) + S_min  (depth)", "(c) + θ  (groups)", "(d) + α  (coupling)"]
+    removed_box = 2
+    group_green = {0, 3}          # high-importance group (pruned less)
+    group_red   = {1}             # low-importance group (pruned more)
+
+    for c in range(4):
+        cx = start_x + c * (col_w + gap)
+        tfh = add_tb(s, cx, top, col_w, 300000)
+        fp(tfh, headers[c], 14, bold=True, color=DARK, align=PP_ALIGN.CENTER)
+        ax = cx + col_w // 2
+        line(s, ax, top + 330000, ax, top + 430000, color=EDGEGRAY, w=19050)
+
+        boxes_top = top + 460000
+        mids = []
+        for b in range(nboxes):
+            by = boxes_top + b * (bh + bgap)
+            bx = cx + box_x_off
+            mids.append(by + bh // 2)
+            removed = (c >= 1 and b == removed_box)
+            if removed:
+                add_rect(s, bx, by, bw, bh, LGRAY, line_color=GRAY, line_w=9525)
+                tfx = add_tb(s, bx, by + bh/2 - 150000, bw, 300000)
+                fp(tfx, "✕ removed", 12, bold=True, color=RED, align=PP_ALIGN.CENTER)
+                continue
+            if c == 0:
+                layer_box(s, bx, by, bw, bh, fill=BOXGRAY)
+            elif c == 1:
+                layer_box(s, bx, by, bw, bh, fill=BOXGRAY, prune_frac=0.30, prune_color=BLUE)
+            else:
+                if b in group_green:
+                    layer_box(s, bx, by, bw, bh, fill=LGREEN, prune_frac=0.20, prune_color=GREEN)
+                else:
+                    layer_box(s, bx, by, bw, bh, fill=LRED, prune_frac=0.45, prune_color=RED)
+
+        stack_bot = boxes_top + nboxes * (bh + bgap) - bgap
+        # functional coupling arc in (d): link the two green-group boxes
+        if c == 3:
+            bxr = cx + box_x_off + bw
+            y0, y3 = mids[0], mids[3]
+            ox = bxr + 110000
+            for seg in [(bxr, y0, ox, y0), (ox, y0, ox, y3), (ox, y3, bxr, y3)]:
+                line(s, *seg, color=ORANGE, w=17780, dash='dash')
+            tfw = add_tb(s, ox - 80000, (y0 + y3)//2 - 110000, 620000, 220000)
+            fp(tfw, "w_ij", 10, bold=True, color=ORANGE, italic=True)
+
+        # per-column note
+        notes = ["all blocks kept,\nuniform ratio",
+                 "remove a redundant\nblock entirely",
+                 "groups get different\nratios (green<red)",
+                 "couple same-group\nblocks (E_f)"]
+        tfn = add_tb(s, cx, stack_bot + 50000, col_w, 520000)
+        fp(tfn, notes[c].split("\n")[0], 11, color=BODY, align=PP_ALIGN.CENTER, italic=True)
+        ap(tfn, notes[c].split("\n")[1], 11, color=BODY, align=PP_ALIGN.CENTER, italic=True, space_before=1)
+
+    cap = add_tb(s, ML, SH - 700000, CW, 460000)
+    fp(cap, "Same column view as the previous slide — but each step here is OUR contribution. "
+            "Turn all three off (no removal, one group, no edges) and you are back at isomorphic pruning.",
+       13, color=BODY, italic=True)
+
+
 def main():
     prs = Presentation()
     prs.slide_width = Emu(SW); prs.slide_height = Emu(SH)
-    slide1(prs); slide2(prs); slide3(prs); slide4(prs); slide5(prs); slide6(prs); slide7(prs)
+    slide1(prs); slide2(prs); slide_ours_view(prs)
+    slide3(prs); slide4(prs); slide5(prs); slide6(prs); slide7(prs)
     out = "/work/hdd/bdjd/hypergraph_pruning/hypergraph_slides.pptx"
     prs.save(out)
     print(f"Saved: {out}")

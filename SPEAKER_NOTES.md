@@ -31,7 +31,20 @@ Before our method, here's how pruning decides what to cut:
 
 ---
 
-## Slide 3 — Isomorphic pruning in one picture
+## Slide 3 — Our method in the same view (parallels the background slide)
+
+Same 4-column layout as the previous slide, but now each step is **our** contribution — so collaborators see our method in the visual language they just learned.
+
+- **(a) Pretrained** — the stacked layers, untouched.
+- **(b) + S_min (depth)** — one redundant block is removed entirely (✕), not just shrunk.
+- **(c) + θ (groups)** — survivors are split into importance groups that get *different* ratios: green group pruned less (small slice), red group pruned more (big slice).
+- **(d) + α (coupling)** — add functional edges (dashed, w_ij) between same-group blocks so they boost each other.
+
+Key parallel: the field's view ends at "(d) Isomorphic" on the previous slide; **our view starts there and keeps going**. Turn all three off → back to isomorphic.
+
+---
+
+## Slide 4 — Isomorphic pruning in one picture
 
 Concretely, isomorphic pruning has **two structure types — attention and MLP — and assigns one ratio to each**.
 
@@ -43,7 +56,7 @@ Simple and strong. The weakness: it treats a **critical block identically to a n
 
 ---
 
-## Slide 4 — What uniform pruning misses (the gap)
+## Slide 5 — What uniform pruning misses (the gap)
 
 Uniform treatment misses three things — and these motivate our three parameters:
 
@@ -55,7 +68,7 @@ Isomorphic pruning treats every block **in isolation** — it can't express any 
 
 ---
 
-## Slide 5 — THE key slide: VainF's graph vs our graph
+## Slide 6 — THE key slide: VainF's graph vs our graph
 
 Spend time here. Both methods are dependency graphs; the contrast is the whole contribution.
 
@@ -75,7 +88,7 @@ Spend time here. Both methods are dependency graphs; the contrast is the whole c
 
 ---
 
-## Slide 6 — The three parameters, defined
+## Slide 7 — The three parameters, defined
 
 - **S_min — depth-pruning threshold.** A threshold on **block sensitivity**: how much the output changes when a block is skipped.
   - `S(i) = mean ‖f(x) − f_bypass(x)‖ / ‖f(x)‖`
@@ -96,7 +109,7 @@ Spend time here. Both methods are dependency graphs; the contrast is the whole c
 
 ---
 
-## Slide 7 — Worked example: building the graph one component at a time
+## Slide 8 — Worked example: building the graph one component at a time
 
 Walk down the four rows — each row adds one component to the row above. Note these are **illustrative numbers** to show the mechanism, not measured results.
 
