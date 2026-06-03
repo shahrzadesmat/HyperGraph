@@ -56,7 +56,21 @@ Simple and strong. The weakness: it treats a **critical block identically to a n
 
 ---
 
-## Slide 5 — What uniform pruning misses (the gap)
+## Slide 5 — Our pruning in one picture (parallels the isomorphic one-picture slide)
+
+Direct contrast to the previous slide. There, all 12 blocks were identical; here they're treated by importance.
+
+- **Greyed rows** (blocks 3, 4, 5) — removed entirely by **S_min** (depth).
+- **Green-tagged blocks** (left bar) — important group → **thin** pruned slice (pruned less).
+- **Red-tagged blocks** — redundant group → **thick** pruned slice (pruned more). That's **θ** giving each group its own ratio.
+- **Dashed orange arc (w_ij)** between two green blocks — a functional edge from **α**.
+- Attention stays blue, MLP stays orange — same two structure types, same untouched residual stream — only the *amount* per block changes.
+
+Line to say: "same picture as isomorphic, but the budget is now spent where it costs least."
+
+---
+
+## Slide 6 — What uniform pruning misses (the gap)
 
 Uniform treatment misses three things — and these motivate our three parameters:
 
@@ -68,7 +82,7 @@ Isomorphic pruning treats every block **in isolation** — it can't express any 
 
 ---
 
-## Slide 6 — THE key slide: VainF's graph vs our graph
+## Slide 7 — THE key slide: VainF's graph vs our graph
 
 Spend time here. Both methods are dependency graphs; the contrast is the whole contribution.
 
@@ -88,7 +102,7 @@ Spend time here. Both methods are dependency graphs; the contrast is the whole c
 
 ---
 
-## Slide 7 — The three parameters, defined
+## Slide 8 — The three parameters, defined
 
 - **S_min — depth-pruning threshold.** A threshold on **block sensitivity**: how much the output changes when a block is skipped.
   - `S(i) = mean ‖f(x) − f_bypass(x)‖ / ‖f(x)‖`
@@ -109,7 +123,7 @@ Spend time here. Both methods are dependency graphs; the contrast is the whole c
 
 ---
 
-## Slide 8 — Worked example: building the graph one component at a time
+## Slide 9 — Worked example: building the graph one component at a time
 
 Walk down the four rows — each row adds one component to the row above. Note these are **illustrative numbers** to show the mechanism, not measured results.
 

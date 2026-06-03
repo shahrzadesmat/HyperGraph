@@ -97,12 +97,15 @@ def line(slide, x1, y1, x2, y2, color=EDGEGRAY, w=15875, dash=None):
         ln.append(d)
     return c
 
-def title_rule(slide, title_text, page_num):
+_PAGE = [0]   # auto page counter (title slide doesn't call title_rule)
+
+def title_rule(slide, title_text, page_num=None):
+    _PAGE[0] += 1
     tf = add_tb(slide, ML, MT, CW, 548640)
     fp(tf, title_text, 28, bold=True, color=DARK)
     add_rect(slide, ML, RULE_Y, CW + 27432, 31750, BLUE)
     tf2 = add_tb(slide, 11430000, 6492240, 640080, 274320)
-    fp(tf2, str(page_num), 10, color=PGNUM, align=PP_ALIGN.RIGHT)
+    fp(tf2, str(_PAGE[0]), 10, color=PGNUM, align=PP_ALIGN.RIGHT)
 
 def blank(prs):
     return prs.slides.add_slide(prs.slide_layouts[6])
@@ -601,19 +604,19 @@ def slide7(prs):
 def slide_ours_view(prs):
     """Same 4-column view as slide 2, but for OUR method's progression."""
     s = blank(prs)
-    title_rule(s, "Our Method in the Same View: Extending Isomorphic", 2)
+    title_rule(s, "Our Method in the Same View: Extending Isomorphic")
 
     col_w, gap = 2500000, 480000
     start_x = ML + 60000
     top = CONT_Y + 120000
-    bw, bh, bgap = 1700000, 470000, 160000
+    bw, bh, bgap = 1700000, 460000, 165000
     nboxes = 4
     box_x_off = (col_w - bw) // 2
 
     headers = ["(a) Pretrained", "(b) + S_min  (depth)", "(c) + θ  (groups)", "(d) + α  (coupling)"]
     removed_box = 2
-    group_green = {0, 3}          # high-importance group (pruned less)
-    group_red   = {1}             # low-importance group (pruned more)
+    group_green = {0, 1}          # high-importance group → pruned LESS
+    group_red   = {3}             # low-importance group  → pruned MORE
 
     for c in range(4):
         cx = start_x + c * (col_w + gap)
@@ -631,50 +634,145 @@ def slide_ours_view(prs):
             removed = (c >= 1 and b == removed_box)
             if removed:
                 add_rect(s, bx, by, bw, bh, LGRAY, line_color=GRAY, line_w=9525)
-                tfx = add_tb(s, bx, by + bh/2 - 150000, bw, 300000)
-                fp(tfx, "✕ removed", 12, bold=True, color=RED, align=PP_ALIGN.CENTER)
+                tfx = add_tb(s, bx, by + bh/2 - 140000, bw, 280000)
+                fp(tfx, "✕  removed", 12, bold=True, color=RED, align=PP_ALIGN.CENTER)
                 continue
             if c == 0:
                 layer_box(s, bx, by, bw, bh, fill=BOXGRAY)
+                tag = None
             elif c == 1:
                 layer_box(s, bx, by, bw, bh, fill=BOXGRAY, prune_frac=0.30, prune_color=BLUE)
+                tag = None
             else:
                 if b in group_green:
-                    layer_box(s, bx, by, bw, bh, fill=LGREEN, prune_frac=0.20, prune_color=GREEN)
+                    layer_box(s, bx, by, bw, bh, fill=LGREEN, prune_frac=0.18, prune_color=GREEN)
+                    tag = ("r ↓", GREEN)
                 else:
-                    layer_box(s, bx, by, bw, bh, fill=LRED, prune_frac=0.45, prune_color=RED)
+                    layer_box(s, bx, by, bw, bh, fill=LRED, prune_frac=0.48, prune_color=RED)
+                    tag = ("r ↑", RED)
+            # block label (left) + optional ratio tag
+            tfl = add_tb(s, bx + 40000, by + bh/2 - 130000, 700000, 260000)
+            fp(tfl, f"B{b}", 12, bold=True, color=DARK)
+            if tag:
+                tft = add_tb(s, bx + bw - 560000, by + bh/2 - 130000, 520000, 260000)
+                fp(tft, tag[0], 12, bold=True, color=tag[1], align=PP_ALIGN.RIGHT)
 
         stack_bot = boxes_top + nboxes * (bh + bgap) - bgap
-        # functional coupling arc in (d): link the two green-group boxes
+        # functional coupling arc in (d): link the two adjacent green-group boxes
         if c == 3:
             bxr = cx + box_x_off + bw
-            y0, y3 = mids[0], mids[3]
-            ox = bxr + 110000
-            for seg in [(bxr, y0, ox, y0), (ox, y0, ox, y3), (ox, y3, bxr, y3)]:
+            y0, y1 = mids[0], mids[1]
+            ox = bxr + 120000
+            for seg in [(bxr, y0, ox, y0), (ox, y0, ox, y1), (ox, y1, bxr, y1)]:
                 line(s, *seg, color=ORANGE, w=17780, dash='dash')
-            tfw = add_tb(s, ox - 80000, (y0 + y3)//2 - 110000, 620000, 220000)
+            tfw = add_tb(s, ox + 30000, (y0 + y1)//2 - 110000, 520000, 220000)
             fp(tfw, "w_ij", 10, bold=True, color=ORANGE, italic=True)
 
-        # per-column note
-        notes = ["all blocks kept,\nuniform ratio",
-                 "remove a redundant\nblock entirely",
-                 "groups get different\nratios (green<red)",
-                 "couple same-group\nblocks (E_f)"]
-        tfn = add_tb(s, cx, stack_bot + 50000, col_w, 520000)
+        notes = ["all blocks kept,\none uniform ratio",
+                 "B2 removed entirely\n(S < S_min)",
+                 "groups → own ratio\ngreen r↓ , red r↑",
+                 "couple same group\nB0–B1  (edge E_f)"]
+        tfn = add_tb(s, cx, stack_bot + 60000, col_w, 520000)
         fp(tfn, notes[c].split("\n")[0], 11, color=BODY, align=PP_ALIGN.CENTER, italic=True)
         ap(tfn, notes[c].split("\n")[1], 11, color=BODY, align=PP_ALIGN.CENTER, italic=True, space_before=1)
 
-    cap = add_tb(s, ML, SH - 700000, CW, 460000)
-    fp(cap, "Same column view as the previous slide — but each step here is OUR contribution. "
-            "Turn all three off (no removal, one group, no edges) and you are back at isomorphic pruning.",
+    cap = add_tb(s, ML, SH - 640000, CW, 420000)
+    fp(cap, "Same column view as the field's — but each step here is OUR addition. "
+            "Turn all three off (no removal, one group, no edges) → back to isomorphic pruning.",
        13, color=BODY, italic=True)
+
+
+def slide_ours_picture(prs):
+    """Parallel to the isomorphic 'one ratio per type' slide, but for OUR method:
+    heterogeneous — depth removal + per-group width + coupling, residual untouched."""
+    s = blank(prs)
+    title_rule(s, "Our Pruning: Depth + Per-Group Width + Coupling")
+
+    # left panel text
+    add_rect(s, 274320, CONT_Y, 5300000, CONT_H, PANEL)
+    add_rect(s, 274320, CONT_Y, 76200, CONT_H, ORANGE)
+    tx = 457200 + 60000
+    tf = add_tb(s, tx, CONT_Y + 80000, 4800000, CONT_H - 160000)
+    fp(tf, "Heterogeneous by design", 17, bold=True, color=ORANGE)
+    ap(tf, "", 6)
+    ap(tf, "Same two structure types (Attn, MLP), but the", 13, color=DARK, space_before=4)
+    ap(tf, "ratio now varies block-to-block:", 13, color=DARK, space_before=1)
+    ap(tf, "", 4)
+    ap(tf, "• S_min — remove low-sensitivity blocks", 13, bold=True, color=RED, space_before=3)
+    ap(tf, "    (here blocks 3, 4, 5 are deleted)", 12, color=BODY, space_before=1)
+    ap(tf, "• θ — each importance group its own ratio", 13, bold=True, color=GREEN, space_before=3)
+    ap(tf, "    green = important → pruned less (thin slice)", 12, color=BODY, space_before=1)
+    ap(tf, "    red = redundant → pruned more (thick slice)", 12, color=BODY, space_before=1)
+    ap(tf, "• α — functional edges couple similar blocks", 13, bold=True, color=ORANGE, space_before=3)
+    ap(tf, "", 5)
+    ap(tf, "Residual stream (embed dim) still never cut —", 13, color=DARK, space_before=3, italic=True)
+    ap(tf, "only block internals shrink, just like isomorphic.", 13, color=DARK, italic=True, space_before=1)
+    ap(tf, "", 5)
+    ap(tf, "Same MAC budget — spent where it costs least.", 14, bold=True, color=ORANGE, space_before=4)
+
+    # right: 12 blocks, heterogeneous (depth removals + per-group slices)
+    rx = 6100000
+    ry = CONT_Y + 120000
+    tfh = add_tb(s, rx, ry - 40000, 5600000, 260000)
+    fp(tfh, "All 12 blocks — treated by importance", 14, bold=True, color=DARK)
+
+    bw, bh, bgap = 4250000, 300000, 56000
+    ry += 250000
+    attn_w = int(bw * 0.42)
+    removed = {3, 4, 5}
+    green   = {0, 1, 2, 11}
+    # per-group (attn_frac, mlp_frac)
+    frac = {"g": (0.12, 0.18), "r": (0.30, 0.55)}
+    mids = {}
+
+    for i in range(12):
+        by = ry + i * (bh + bgap)
+        mids[i] = by + bh // 2
+        if i in removed:
+            add_rect(s, rx, by, bw, bh, LGRAY, line_color=GRAY, line_w=9525)
+            tfx = add_tb(s, rx + 200000, by + bh/2 - 120000, bw, 240000)
+            fp(tfx, f"Block {i}   ✕ removed  (S < S_min)", 10, bold=True, color=RED)
+            continue
+        g = "g" if i in green else "r"
+        fa, fm = frac[g]
+        gcol = GREEN if g == "g" else RED
+        # group tag bar on the far left
+        add_rect(s, rx - 90000, by, 60000, bh, gcol)
+        # attention half
+        layer_box(s, rx, by, attn_w, bh, fill=LBLUE)
+        add_rect(s, rx + attn_w - int(attn_w*fa), by, int(attn_w*fa), bh, BLUE,
+                 line_color=EDGEGRAY, line_w=9525)
+        # mlp half
+        mw = bw - attn_w - 40000
+        layer_box(s, rx + attn_w + 40000, by, mw, bh, fill=LORANGE)
+        add_rect(s, rx + attn_w + 40000 + mw - int(mw*fm), by, int(mw*fm), bh, ORANGE,
+                 line_color=EDGEGRAY, line_w=9525)
+        # labels
+        tfb = add_tb(s, rx + 50000, by + bh/2 - 110000, attn_w, 220000)
+        fp(tfb, f"Blk {i} · Attn", 9, color=DARK)
+        tfm = add_tb(s, rx + attn_w + 90000, by + bh/2 - 110000, mw, 220000)
+        fp(tfm, "MLP", 9, color=DARK)
+
+    # one functional coupling arc between two adjacent green blocks (0,1)
+    bxr = rx + bw
+    ox = bxr + 130000
+    for seg in [(bxr, mids[0], ox, mids[0]), (ox, mids[0], ox, mids[1]), (ox, mids[1], bxr, mids[1])]:
+        line(s, *seg, color=ORANGE, w=17780, dash='dash')
+    tfw = add_tb(s, ox + 30000, (mids[0]+mids[1])//2 - 110000, 520000, 220000)
+    fp(tfw, "w_ij", 10, bold=True, color=ORANGE, italic=True)
+
+    tfn = add_tb(s, rx, ry + 12 * (bh + bgap) + 20000, 5800000, 260000)
+    fp(tfn, "thin slice = pruned less (green) · thick slice = pruned more (red) · grey = removed",
+       11, color=BODY, italic=True)
 
 
 def main():
     prs = Presentation()
     prs.slide_width = Emu(SW); prs.slide_height = Emu(SH)
+    _PAGE[0] = 0
     slide1(prs); slide2(prs); slide_ours_view(prs)
-    slide3(prs); slide4(prs); slide5(prs); slide6(prs); slide7(prs)
+    slide3(prs); slide_ours_picture(prs)
+    slide4(prs); slide5(prs); slide6(prs); slide7(prs)
     out = "/work/hdd/bdjd/hypergraph_pruning/hypergraph_slides.pptx"
     prs.save(out)
     print(f"Saved: {out}")
