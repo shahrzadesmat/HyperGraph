@@ -512,10 +512,96 @@ def slide6(prs):
        15, color=ORANGE, space_before=6)
 
 
+def _mini_graph(s, gx, gy, node_d, gap, fills, removed, functional, labels):
+    """Compact 5-node block-chain for the build-up example."""
+    n = len(fills)
+    cx = [gx + i * (node_d + gap) for i in range(n)]
+    present = [i for i in range(n) if i not in removed]
+
+    # residual chain between consecutive present nodes (skips removed)
+    for a, b in zip(present, present[1:]):
+        line(s, cx[a] + node_d, gy + node_d/2, cx[b], gy + node_d/2,
+             color=EDGEGRAY, w=17780)
+
+    # functional dashed arcs above
+    for (i, j) in functional:
+        x1 = cx[i] + node_d/2
+        x2 = cx[j] + node_d/2
+        ytop = gy - 230000
+        for (a, b, c, d2) in [(x1, gy, x1, ytop), (x1, ytop, x2, ytop), (x2, ytop, x2, gy)]:
+            line(s, a, b, c, d2, color=ORANGE, w=15875, dash='dash')
+
+    # nodes
+    for i in range(n):
+        if i in removed:
+            add_rect(s, cx[i], gy, node_d, node_d, LGRAY, line_color=GRAY,
+                     line_w=9525, shape=MSO_SHAPE.OVAL)
+            tfx = add_tb(s, cx[i], gy + node_d/2 - 150000, node_d, 300000)
+            fp(tfx, "✕", 20, bold=True, color=RED, align=PP_ALIGN.CENTER)
+        else:
+            add_rect(s, cx[i], gy, node_d, node_d, fills[i], shape=MSO_SHAPE.OVAL)
+            tfn = add_tb(s, cx[i], gy + node_d/2 - 120000, node_d, 240000)
+            fp(tfn, labels[i], 11, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+
+
+def slide7(prs):
+    s = blank(prs)
+    title_rule(s, "Worked Example: Building the Graph, One Component at a Time", 6)
+
+    labels = ["B0", "B1", "B2", "B3", "B4"]
+    # illustrative values (to show the mechanism, not measured results)
+    # sensitivity S: B0 .90  B1 .50  B2 .35  B3 .60  B4 .85   (S_min = 0.40 removes B2)
+    # importance  I: B0 .45  B1 .22  B3 .25  B4 .40           (groups: {B0,B4} hi, {B1,B3} lo)
+
+    rows = [
+        ("0   Start  =  VainF",
+         "All 5 blocks kept · one uniform ratio · no inter-block edges",
+         [BLUE]*5, set(), []),
+        ("+  S_min = 0.40",
+         "B2 has S = 0.35 < 0.40  →  removed entirely  (node set V′ shrinks)",
+         [BLUE, BLUE, BLUE, BLUE, BLUE], {2}, []),
+        ("+  θ  (grouping)",
+         "Group by importance: {B0,B4} high → pruned less,  {B1,B3} low → pruned more",
+         [GREEN, RED, BLUE, RED, GREEN], {2}, []),
+        ("+  α  (coupling)",
+         "Functional edges link similar blocks: B0–B4 and B1–B3 boost each other",
+         [GREEN, RED, BLUE, RED, GREEN], {2}, [(0, 4), (1, 3)]),
+    ]
+
+    ry0 = CONT_Y + 40000
+    row_h = 1180000
+    lab_w = 3250000
+    gx = ML + lab_w + 250000
+    node_d = 470000
+    graph_w = SW - gx - ML
+    gap = (graph_w - 5 * node_d) // 4
+
+    for r, (head, change, fills, removed, functional) in enumerate(rows):
+        ry = ry0 + r * row_h
+        # alternating light background band
+        if r % 2 == 0:
+            add_rect(s, ML, ry, CW, row_h - 60000, RGBColor(0xF7, 0xF9, 0xFC))
+        # left label
+        accent = [GRAY, RED, BLUE, ORANGE][r]
+        add_rect(s, ML, ry + 120000, 110000, row_h - 320000, accent)
+        tf = add_tb(s, ML + 200000, ry + 130000, lab_w - 250000, row_h - 260000)
+        fp(tf, head, 16, bold=True, color=accent)
+        ap(tf, change, 12, color=BODY, space_before=6)
+        # graph
+        gy = ry + (row_h - node_d) // 2 + 40000
+        _mini_graph(s, gx, gy, node_d, gap, fills, removed, functional, labels)
+
+    # footnote
+    fn = add_tb(s, ML, SH - 470000, CW, 320000)
+    fp(fn, "Illustrative 5-block example (values chosen to show the mechanism). "
+           "Each row adds one component to the row above — the graph is built up, not rebuilt.",
+       12, color=BODY, italic=True)
+
+
 def main():
     prs = Presentation()
     prs.slide_width = Emu(SW); prs.slide_height = Emu(SH)
-    slide1(prs); slide2(prs); slide3(prs); slide4(prs); slide5(prs); slide6(prs)
+    slide1(prs); slide2(prs); slide3(prs); slide4(prs); slide5(prs); slide6(prs); slide7(prs)
     out = "/work/hdd/bdjd/hypergraph_pruning/hypergraph_slides.pptx"
     prs.save(out)
     print(f"Saved: {out}")

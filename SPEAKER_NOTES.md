@@ -93,3 +93,21 @@ Spend time here. Both methods are dependency graphs; the contrast is the whole c
   - *Graph effect:* creates E_f — a block's importance rises with its coupled neighbours'.
 
 **Punchline (land this):** set `S_min = 0, θ = 1, α = 0` and our method collapses **exactly** to isomorphic pruning. So VainF is a **special case** of our framework — one corner of the parameter space. Our claim: better points exist, and these three knobs let us find them. Results will tell us by how much.
+
+---
+
+## Slide 7 — Worked example: building the graph one component at a time
+
+Walk down the four rows — each row adds one component to the row above. Note these are **illustrative numbers** to show the mechanism, not measured results.
+
+Setup (5 blocks):
+- Sensitivity `S`: B0=0.90, B1=0.50, **B2=0.35**, B3=0.60, B4=0.85
+- Importance `I`: B0=0.45, B1=0.22, B3=0.25, B4=0.40
+
+Rows:
+1. **Start = VainF.** All 5 blocks kept, one uniform ratio, no edges between blocks (all blue).
+2. **+ S_min = 0.40.** B2's sensitivity 0.35 < 0.40 → B2 is removed entirely (✕). The residual chain now skips it. Node set V′ shrank from 5 to 4.
+3. **+ θ (grouping).** Group the survivors by importance: {B0, B4} are high (≈0.45, 0.40) → **green**, pruned *less*; {B1, B3} are low (≈0.22, 0.25) → **red**, pruned *more*. Same MAC budget, allocated by importance.
+4. **+ α (coupling).** Add functional edges between similar blocks — B0–B4 and B1–B3 (dashed orange). Coupled blocks boost each other's importance, sharpening the group assignment.
+
+**Key line:** the graph is **built up, not rebuilt** — each knob adds structure on top of the previous, and turning all three off returns you to VainF (row 1).
