@@ -8,7 +8,7 @@ set -e
 DATA_PATH="/work/hdd/bdjd/imagenet_10pct"
 TARGET_MACS=2.5                    # GigaOps target (DeiT-Small baseline ≈ 4.6G, ~46% reduction)
 MODEL="deit_small_patch16_224"
-EPOCHS=20
+EPOCHS=5
 BASE_DIR="/work/hdd/bdjd/hypergraph_pruning/results"
 
 HEAD_SCALE=0.2   # r_attn_base = r_mlp_base * HEAD_SCALE (matches VainF DeiT-Small)

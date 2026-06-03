@@ -88,11 +88,14 @@ def prune_attention_head_dim(model: nn.Module,
 
     For each surviving block, keep all num_heads heads but reduce head_dim by
     the block's attention ratio. Within each head we keep the top-k dimensions
-    by combined Q+K+V row norm (the same kept indices are applied to Q, K, V so
-    dot products stay aligned). proj input columns are sliced to match the new
-    per-head V output; proj output stays at embed_dim.
+    by combined Q+K+V Taylor importance (data-driven |grad*weight|, matching
+    VainF); the same kept indices are applied to Q, K, V so dot products stay
+    aligned. proj input columns are sliced to match the new per-head V output;
+    proj output stays at embed_dim. Falls back to weight magnitude if no
+    per-channel Taylor is available.
     """
     surviving = hg["surviving_blocks"]
+    taylor    = hg.get("taylor_channels")
 
     for i in surviving:
         block = model.blocks[index_map[i]]
@@ -112,25 +115,39 @@ def prune_attention_head_dim(model: nn.Module,
             continue
 
         w = qkv.weight.data                         # (3*embed_dim, embed_dim)
+        # per qkv output row importance: Taylor if available, else magnitude
+        tq = (taylor[i]["qkv"].to(w.device) if taylor is not None
+              else w.norm(dim=1))                   # (3*embed_dim,)
 
-        keep_rows      = []                         # qkv output rows to keep
-        proj_keep_cols = []                         # proj input cols to keep
+        # 1) pick kept dims per head (same indices for Q, K, V so q·kᵀ aligns)
+        per_head_keep = []
         for h in range(num_heads):
-            # importance of each of this head's head_dim channels = Q+K+V norms
             imp = torch.zeros(head_dim, device=w.device)
             for part in range(3):                   # 0=Q, 1=K, 2=V
                 base = part * embed_dim + h * head_dim
-                imp += w[base:base + head_dim, :].norm(dim=1)
-            keep = imp.topk(new_head_dim).indices.sort().values
+                imp += tq[base:base + head_dim]
+            per_head_keep.append(imp.topk(new_head_dim).indices.sort().values)
 
-            for part in range(3):
-                base = part * embed_dim + h * head_dim
-                keep_rows.append(base + keep)
-            # proj input column block for head h (concatenated V outputs)
-            proj_keep_cols.append(h * head_dim + keep)
+        # 2) qkv output rows in PART-major order (all Q heads, then K, then V)
+        #    to match timm's reshape(B, N, 3, num_heads, head_dim).
+        keep_rows = torch.cat([
+            part * embed_dim + h * head_dim + per_head_keep[h]
+            for part in range(3)
+            for h in range(num_heads)
+        ])
 
-        keep_rows      = torch.cat(keep_rows)
-        proj_keep_cols = torch.cat(proj_keep_cols)
+        # 3) proj input cols in HEAD-major order (concatenated head V outputs)
+        proj_keep_cols = torch.cat([
+            h * head_dim + per_head_keep[h] for h in range(num_heads)
+        ])
+
+        # guard: keep_rows must be part-major (catches Q/K/V mis-ordering)
+        seg = num_heads * new_head_dim
+        assert bool((keep_rows[:seg] < embed_dim).all()
+                    and (keep_rows[seg:2 * seg] >= embed_dim).all()
+                    and (keep_rows[seg:2 * seg] < 2 * embed_dim).all()
+                    and (keep_rows[2 * seg:] >= 2 * embed_dim).all()), \
+            "qkv keep_rows not in part-major (Q,K,V) order"
 
         # qkv: prune output rows, keep input cols (= embed_dim)
         qkv.weight = nn.Parameter(w[keep_rows, :])
@@ -164,8 +181,12 @@ def prune_mlp_per_block(model: nn.Module,
     Prune MLP hidden dimension independently per surviving block.
     fc1 input (embed_dim) and fc2 output (embed_dim) stay fixed — only the
     hidden dimension shrinks, so the residual stream is untouched.
+
+    Hidden neurons are kept by Taylor importance (data-driven, fc1 row +
+    fc2 col |grad*weight|, matching VainF), falling back to weight magnitude.
     """
     surviving = hg["surviving_blocks"]
+    taylor    = hg.get("taylor_channels")
 
     for i in surviving:
         block = model.blocks[index_map[i]]
@@ -178,10 +199,12 @@ def prune_mlp_per_block(model: nn.Module,
         hidden_dim  = fc1.out_features
         keep_hidden = max(MIN_MLP_DIM, int(hidden_dim * (1.0 - ratio)))
 
-        # joint importance: fc1 output norm * fc2 input norm
-        fc1_imp = fc1.weight.data.norm(dim=1)           # (hidden_dim,)
-        fc2_imp = fc2.weight.data.norm(dim=0)           # (hidden_dim,)
-        joint   = fc1_imp * fc2_imp
+        if taylor is not None:
+            # Taylor: per-hidden-neuron fc1 output + fc2 input importance
+            joint = (taylor[i]["fc1"] + taylor[i]["fc2"]).to(fc1.weight.device)
+        else:
+            # fallback: fc1 output norm * fc2 input norm
+            joint = fc1.weight.data.norm(dim=1) * fc2.weight.data.norm(dim=0)
 
         keep_idx = joint.topk(keep_hidden).indices.sort().values
 

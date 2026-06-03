@@ -20,7 +20,7 @@ set -e
 DATA_PATH="/work/hdd/bdjd/imagenet_10pct"
 TARGET_MACS=2.5
 MODEL="deit_small_patch16_224"
-EPOCHS=20
+EPOCHS=5
 OUTDIR="/work/hdd/bdjd/hypergraph_pruning/results/iso_paper_baseline"
 
 mkdir -p "${OUTDIR}"

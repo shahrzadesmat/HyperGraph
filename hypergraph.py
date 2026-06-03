@@ -99,6 +99,48 @@ def compute_taylor_scores(model: nn.Module,
     return scores
 
 
+def compute_taylor_channels(model: nn.Module,
+                            calib_loader,
+                            criterion: nn.Module,
+                            device: torch.device) -> Dict[int, Dict[str, "torch.Tensor"]]:
+    """
+    Per-CHANNEL Taylor importance (data-driven), matching VainF's criterion.
+    Accumulated as |grad * weight| per batch over the calibration set.
+
+    Returns {block_idx: {"qkv": (3*embed,), "fc1": (hidden,), "fc2": (hidden,)}}
+    where each entry is the per-output-channel (or per-input-channel for fc2)
+    importance used to decide WHICH channels to keep during pruning.
+    """
+    model.eval()
+    accum = None
+
+    for inputs, labels in calib_loader:
+        model.zero_grad()
+        inputs, labels = inputs.to(device), labels.to(device)
+        loss = criterion(model(inputs), labels)
+        loss.backward()
+
+        if accum is None:
+            accum = {i: {"qkv": 0.0, "fc1": 0.0, "fc2": 0.0}
+                     for i in range(len(model.blocks))}
+
+        for i, block in enumerate(model.blocks):
+            qkv = block.attn.qkv
+            fc1 = block.mlp.fc1
+            fc2 = block.mlp.fc2
+            # per qkv output row (3*embed,), per fc1 output row (hidden,),
+            # per fc2 input col (hidden,)
+            accum[i]["qkv"] = accum[i]["qkv"] + (qkv.weight.grad * qkv.weight).abs().sum(dim=1).detach()
+            accum[i]["fc1"] = accum[i]["fc1"] + (fc1.weight.grad * fc1.weight).abs().sum(dim=1).detach()
+            accum[i]["fc2"] = accum[i]["fc2"] + (fc2.weight.grad * fc2.weight).abs().sum(dim=0).detach()
+
+    model.zero_grad()
+    for i in accum:
+        for k in accum[i]:
+            accum[i][k] = accum[i][k].cpu()
+    return accum
+
+
 # ---------------------------------------------------------------------------
 # Step 3 — functional edges  (alpha parameter)
 # ---------------------------------------------------------------------------
@@ -329,9 +371,12 @@ def build_hypergraph(model: nn.Module,
         tag = " <- REMOVE" if i in removed_blocks else ""
         print(f"  Block {i:2d}: {s:.3f}{tag}")
 
-    # --- Taylor scores on surviving blocks only ---
+    # --- Taylor scores on surviving blocks only (scalar, for grouping/ratios) ---
     scores = compute_taylor_scores(model, calib_loader, criterion, device)
     scores = {i: s for i, s in scores.items() if i in surviving_blocks}
+
+    # --- per-channel Taylor (data-driven, for WHICH channels to keep) ---
+    taylor_channels = compute_taylor_channels(model, calib_loader, criterion, device)
 
     # --- alpha: functional edges + importance boost ---
     edges         = compute_functional_edges(scores, threshold=edge_threshold)
@@ -373,4 +418,5 @@ def build_hypergraph(model: nn.Module,
         "edges":            edges,
         "groups":           groups,
         "ratios":           ratios,
+        "taylor_channels":  taylor_channels,
     }
