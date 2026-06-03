@@ -31,7 +31,31 @@ Before our method, here's how pruning decides what to cut:
 
 ---
 
-## Slide 3 — Our method in the same view (parallels the background slide)
+## Slide 3 — Isomorphic pruning in one picture
+
+Concretely, isomorphic pruning has **two structure types — attention and MLP — and assigns one ratio to each**.
+
+- Inside attention it shrinks the **head dimension**; inside MLP it shrinks the **hidden dimension**.
+- It **never touches the residual stream** (the embedding dim that flows through the whole network) — that's shared across all layers, and cutting it destroys the pretrained features. *(We learned this the hard way — pruning the residual collapsed zero-shot accuracy to random.)*
+- **Every one of the 12 blocks gets the same ratio.**
+
+Simple and strong. The weakness: it treats a **critical block identically to a near-redundant one**.
+
+---
+
+## Slide 4 — What uniform pruning misses (the gap)
+
+One ratio for every block cannot express three concrete differences. Each card maps a gap → the parameter that fixes it (right-hand chip).
+
+1. **Some blocks are nearly dead weight.** Block *sensitivity* (output change when the block is bypassed) varies widely — a few blocks are close to identity, yet uniform pruning still keeps and shrinks them, spending MAC budget on blocks that contribute almost nothing.  *isomorphic: depth ignored* → **fix: S_min** (remove them entirely).
+2. **Blocks are not equally important.** *Taylor importance* (|grad × weight|) differs block-to-block. One global ratio over-prunes the critical blocks (accuracy drops) and under-prunes the redundant ones (budget wasted) — the cut lands in the wrong places.  *isomorphic: width is flat* → **fix: θ** (per-group ratios).
+3. **Block importances are not independent.** Some blocks' importance scores are correlated (rise/fall together). Pruning each in isolation ignores that a surviving block may depend on a neighbour you just pruned.  *isomorphic: coupling ignored* → **fix: α** (functional edges).
+
+Land it: isomorphic treats every block in isolation; our three parameters each remove one of these blind spots.
+
+---
+
+## Slide 5 — Our method in the same view (parallels the background slide)
 
 Same 4-column layout as the previous slide, but now each step is **our** contribution — so collaborators see our method in the visual language they just learned.
 
@@ -44,19 +68,7 @@ Key parallel: the field's view ends at "(d) Isomorphic" on the previous slide; *
 
 ---
 
-## Slide 4 — Isomorphic pruning in one picture
-
-Concretely, isomorphic pruning has **two structure types — attention and MLP — and assigns one ratio to each**.
-
-- Inside attention it shrinks the **head dimension**; inside MLP it shrinks the **hidden dimension**.
-- It **never touches the residual stream** (the embedding dim that flows through the whole network) — that's shared across all layers, and cutting it destroys the pretrained features. *(We learned this the hard way — pruning the residual collapsed zero-shot accuracy to random.)*
-- **Every one of the 12 blocks gets the same ratio.**
-
-Simple and strong. The weakness: it treats a **critical block identically to a near-redundant one**.
-
----
-
-## Slide 5 — Our pruning in one picture (parallels the isomorphic one-picture slide)
+## Slide 6 — Our pruning in one picture (parallels the isomorphic one-picture slide)
 
 Direct contrast to the previous slide. There, all 12 blocks were identical; here they're treated by importance.
 
@@ -67,18 +79,6 @@ Direct contrast to the previous slide. There, all 12 blocks were identical; here
 - Attention stays blue, MLP stays orange — same two structure types, same untouched residual stream — only the *amount* per block changes.
 
 Line to say: "same picture as isomorphic, but the budget is now spent where it costs least."
-
----
-
-## Slide 6 — What uniform pruning misses (the gap)
-
-One ratio for every block cannot express three concrete differences. Each card maps a gap → the parameter that fixes it (right-hand chip).
-
-1. **Some blocks are nearly dead weight.** Block *sensitivity* (output change when the block is bypassed) varies widely — a few blocks are close to identity, yet uniform pruning still keeps and shrinks them, spending MAC budget on blocks that contribute almost nothing.  *isomorphic: depth ignored* → **fix: S_min** (remove them entirely).
-2. **Blocks are not equally important.** *Taylor importance* (|grad × weight|) differs block-to-block. One global ratio over-prunes the critical blocks (accuracy drops) and under-prunes the redundant ones (budget wasted) — the cut lands in the wrong places.  *isomorphic: width is flat* → **fix: θ** (per-group ratios).
-3. **Block importances are not independent.** Some blocks' importance scores are correlated (rise/fall together). Pruning each in isolation ignores that a surviving block may depend on a neighbour you just pruned.  *isomorphic: coupling ignored* → **fix: α** (functional edges).
-
-Land it: isomorphic treats every block in isolation; our three parameters each remove one of these blind spots.
 
 ---
 

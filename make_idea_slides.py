@@ -815,9 +815,13 @@ def main():
     prs = Presentation()
     prs.slide_width = Emu(SW); prs.slide_height = Emu(SH)
     _PAGE[0] = 0
-    slide1(prs); slide2(prs); slide_ours_view(prs)
-    slide3(prs); slide_ours_picture(prs)
-    slide4(prs); slide5(prs); slide6(prs); slide7(prs)
+    # Problem → solution flow:
+    #  1 title · 2 background · 3 isomorphic baseline · 4 the gap (motivation)
+    #  5 our method (overview) · 6 our method (detail) · 7 graph comparison
+    #  8 parameters defined · 9 worked example
+    slide1(prs); slide2(prs); slide3(prs); slide4(prs)
+    slide_ours_view(prs); slide_ours_picture(prs)
+    slide5(prs); slide6(prs); slide7(prs)
     out = "/work/hdd/bdjd/hypergraph_pruning/hypergraph_slides.pptx"
     prs.save(out)
     print(f"Saved: {out}")
