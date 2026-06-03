@@ -127,14 +127,14 @@ Spend time here. Both methods are dependency graphs; the contrast is the whole c
 
 Walk down the four rows — each row adds one component to the row above. Note these are **illustrative numbers** to show the mechanism, not measured results.
 
-Setup (5 blocks):
-- Sensitivity `S`: B0=0.90, B1=0.50, **B2=0.35**, B3=0.60, B4=0.85
-- Importance `I`: B0=0.45, B1=0.22, B3=0.25, B4=0.40
+Setup (5 blocks) — values are shown on the slide, under each node:
+- Sensitivity `S`: B0=0.90, B1=0.85, **B2=0.35**, B3=0.55, B4=0.60
+- Importance `I`: B0=0.45, B1=0.42, B3=0.24, B4=0.22  (groups come out contiguous: {B0,B1} high, {B3,B4} low)
 
 Rows:
-1. **Start = VainF.** All 5 blocks kept, one uniform ratio, no edges between blocks (all blue).
-2. **+ S_min = 0.40.** B2's sensitivity 0.35 < 0.40 → B2 is removed entirely (✕). The residual chain now skips it. Node set V′ shrank from 5 to 4.
-3. **+ θ (grouping).** Group the survivors by importance: {B0, B4} are high (≈0.45, 0.40) → **green**, pruned *less*; {B1, B3} are low (≈0.22, 0.25) → **red**, pruned *more*. Same MAC budget, allocated by importance.
-4. **+ α (coupling).** Add functional edges between similar blocks — B0–B4 and B1–B3 (dashed orange). Coupled blocks boost each other's importance, sharpening the group assignment.
+1. **Start = VainF.** All 5 blocks kept, one uniform ratio, no edges (all blue).
+2. **+ S_min = 0.40.** B2's sensitivity `S=0.35 < 0.40` → removed entirely (✕); the residual chain skips it. V′ shrinks 5→4. (Point at the S values under each node.)
+3. **+ θ (grouping).** Survivors group by importance — the slide draws labeled brackets: **Group A {B0,B1}** (I≈0.45,0.42) → r↓ pruned less (green); **Group B {B3,B4}** (I≈0.24,0.22) → r↑ pruned more (red). Same MAC budget, allocated by importance.
+4. **+ α (coupling).** Functional edges couple **within** each group — B0–B1 and B3–B4 (dashed orange w_ij) — so coupled blocks boost each other, sharpening the grouping.
 
 **Key line:** the graph is **built up, not rebuilt** — each knob adds structure on top of the previous, and turning all three off returns you to VainF (row 1).

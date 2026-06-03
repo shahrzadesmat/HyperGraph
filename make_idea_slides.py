@@ -545,8 +545,10 @@ def slide6(prs):
        15, color=ORANGE, space_before=6)
 
 
-def _mini_graph(s, gx, gy, node_d, gap, fills, removed, functional, labels):
-    """Compact 5-node block-chain for the build-up example."""
+def _mini_graph(s, gx, gy, node_d, gap, fills, removed, functional, labels,
+                values=None, groups=None):
+    """Compact 5-node block-chain. Optional per-node value badge (below) and
+    labeled group brackets (above). groups = list of (index_set, label, color)."""
     n = len(fills)
     cx = [gx + i * (node_d + gap) for i in range(n)]
     present = [i for i in range(n) if i not in removed]
@@ -556,10 +558,22 @@ def _mini_graph(s, gx, gy, node_d, gap, fills, removed, functional, labels):
         line(s, cx[a] + node_d, gy + node_d/2, cx[b], gy + node_d/2,
              color=EDGEGRAY, w=17780)
 
+    # group brackets above (only used in the theta row — no arcs there)
+    if groups:
+        for idxs, label, gcol in groups:
+            a, b = min(idxs), max(idxs)
+            xl, xr = cx[a], cx[b] + node_d
+            ytop = gy - 150000
+            line(s, xl, ytop, xr, ytop, color=gcol, w=15875)
+            line(s, xl, ytop, xl, ytop + 70000, color=gcol, w=15875)
+            line(s, xr, ytop, xr, ytop + 70000, color=gcol, w=15875)
+            tfg = add_tb(s, (xl + xr)//2 - 750000, ytop - 250000, 1500000, 230000)
+            fp(tfg, label, 11, bold=True, color=gcol, align=PP_ALIGN.CENTER)
+
     # functional dashed arcs above — staggered so distinct couplings don't merge
     _func_arcs(s, cx, node_d, gy, functional, w=15875, hi=300000, step=150000, label=False)
 
-    # nodes
+    # nodes + value badges
     for i in range(n):
         if i in removed:
             add_rect(s, cx[i], gy, node_d, node_d, LGRAY, line_color=GRAY,
@@ -570,6 +584,10 @@ def _mini_graph(s, gx, gy, node_d, gap, fills, removed, functional, labels):
             add_rect(s, cx[i], gy, node_d, node_d, fills[i], shape=MSO_SHAPE.OVAL)
             tfn = add_tb(s, cx[i], gy + node_d/2 - 120000, node_d, 240000)
             fp(tfn, labels[i], 11, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
+        if values and i < len(values) and values[i]:
+            tfv = add_tb(s, cx[i] - 80000, gy + node_d + 25000, node_d + 160000, 200000)
+            fp(tfv, values[i], 10, bold=(i in removed),
+               color=(RED if i in removed else DARK), align=PP_ALIGN.CENTER)
 
 
 def slide7(prs):
@@ -578,46 +596,48 @@ def slide7(prs):
 
     labels = ["B0", "B1", "B2", "B3", "B4"]
     # illustrative values (to show the mechanism, not measured results)
-    # sensitivity S: B0 .90  B1 .50  B2 .35  B3 .60  B4 .85   (S_min = 0.40 removes B2)
-    # importance  I: B0 .45  B1 .22  B3 .25  B4 .40           (groups: {B0,B4} hi, {B1,B3} lo)
+    # sensitivity S: B0 .90  B1 .85  B2 .35  B3 .55  B4 .60   (S_min = 0.40 removes B2)
+    # importance  I: B0 .45  B1 .42            B3 .24  B4 .22  (groups: {B0,B1} hi, {B3,B4} lo)
+    GA = [GREEN, GREEN, BLUE, RED, RED]   # B0,B1 high group · B3,B4 low group · B2 removed
 
     rows = [
         ("0   Start  =  VainF",
          "All 5 blocks kept · one uniform ratio · no inter-block edges",
-         [BLUE]*5, set(), []),
+         [BLUE]*5, set(), [], None, None),
         ("+  S_min = 0.40",
          "B2 has S = 0.35 < 0.40  →  removed entirely  (node set V′ shrinks)",
-         [BLUE, BLUE, BLUE, BLUE, BLUE], {2}, []),
+         [BLUE]*5, {2}, [],
+         ["S=.90", "S=.85", "S=.35", "S=.55", "S=.60"], None),
         ("+  θ  (grouping)",
-         "Group by importance: {B0,B4} high → pruned less,  {B1,B3} low → pruned more",
-         [GREEN, RED, BLUE, RED, GREEN], {2}, []),
+         "Group by importance:  {B0,B1} high → r↓ ,   {B3,B4} low → r↑",
+         GA, {2}, [],
+         ["I=.45", "I=.42", None, "I=.24", "I=.22"],
+         [({0, 1}, "Group A · r↓", GREEN), ({3, 4}, "Group B · r↑", RED)]),
         ("+  α  (coupling)",
-         "Functional edges link similar blocks: B0–B4 and B1–B3 boost each other",
-         [GREEN, RED, BLUE, RED, GREEN], {2}, [(0, 4), (1, 3)]),
+         "Functional edges couple within groups:  B0–B1  and  B3–B4  boost each other",
+         GA, {2}, [(0, 1), (3, 4)], None, None),
     ]
 
     ry0 = CONT_Y + 40000
-    row_h = 1180000
+    row_h = 1280000
     lab_w = 3250000
     gx = ML + lab_w + 250000
-    node_d = 470000
+    node_d = 440000
     graph_w = SW - gx - ML
     gap = (graph_w - 5 * node_d) // 4
 
-    for r, (head, change, fills, removed, functional) in enumerate(rows):
+    for r, (head, change, fills, removed, functional, values, groups) in enumerate(rows):
         ry = ry0 + r * row_h
-        # alternating light background band
         if r % 2 == 0:
             add_rect(s, ML, ry, CW, row_h - 60000, RGBColor(0xF7, 0xF9, 0xFC))
-        # left label
         accent = [GRAY, RED, BLUE, ORANGE][r]
         add_rect(s, ML, ry + 120000, 110000, row_h - 320000, accent)
-        tf = add_tb(s, ML + 200000, ry + 130000, lab_w - 250000, row_h - 260000)
+        tf = add_tb(s, ML + 200000, ry + 150000, lab_w - 250000, row_h - 280000)
         fp(tf, head, 16, bold=True, color=accent)
         ap(tf, change, 12, color=BODY, space_before=6)
-        # graph
-        gy = ry + (row_h - node_d) // 2 + 40000
-        _mini_graph(s, gx, gy, node_d, gap, fills, removed, functional, labels)
+        gy = ry + (row_h - node_d) // 2 + 30000
+        _mini_graph(s, gx, gy, node_d, gap, fills, removed, functional, labels,
+                    values=values, groups=groups)
 
     # footnote
     fn = add_tb(s, ML, SH - 470000, CW, 320000)
