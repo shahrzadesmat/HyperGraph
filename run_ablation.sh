@@ -28,7 +28,7 @@ sbatch_run() {
            --gres=gpu:1 \
            --cpus-per-task=32 \
            --mem=64G \
-           --time=12:00:00 \
+           --time=03:00:00 \
            --account=bdjd-delta-gpu \
            --output="${outdir}/slurm_%j.out" \
            --error="${outdir}/slurm_%j.err" \
@@ -38,7 +38,7 @@ export PATH=/work/hdd/bdjd/miniconda3/bin:\$PATH
 source /work/hdd/bdjd/miniconda3/etc/profile.d/conda.sh
 conda activate pytorch_fresh
 cd /work/hdd/bdjd/hypergraph_pruning
-PYTHONUNBUFFERED=1 python run.py \
+PYTHONUNBUFFERED=1 python -u run.py \
   --model         ${MODEL} \
   --data_path     ${DATA_PATH} \
   --target_macs_g ${TARGET_MACS} \
