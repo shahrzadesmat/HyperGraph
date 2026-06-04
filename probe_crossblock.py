@@ -1,21 +1,19 @@
 """
-Cross-block redundancy probe.
+Cross-block redundancy probe (tightened).
 
-Premise to test: transformer blocks do OVERLAPPING work — a block's contribution
-to the shared residual stream can be reconstructed from OTHER blocks' contributions.
-If true, there is cross-block redundancy that every per-layer method (ThiNet/CP/
-DepGraph/GOHSP) is structurally blind to.
+Improvements over v1:
+  * CENTER every signal (remove per-channel mean) so the intercept can't trivially
+    inflate reconstruction -> the shuffled control now lands near 1.0 and the real
+    cross-block signal is clean.
+  * Add NEURON-granularity test: reconstruct a LATE block's residual contribution
+    from EARLIER blocks' actual hidden NEURONS (the units we'd fold), not just from
+    their 384-d block outputs.
 
-For each block i we take its MLP contribution to the residual  Δ_i  (tokens × 384)
-and ask: how well can a SINGLE fixed linear map reproduce Δ_i from
-   (a) ALL other blocks' contributions {Δ_j : j≠i}
-   (b) only EARLIER blocks {Δ_j : j<i}   (causal — usable for a forward fold)
-   (c) CONTROL: the same dictionary with rows shuffled (breaks token alignment)
+Part A (block-level): can Δ_i be reconstructed from other blocks' Δ_j ?
+Part B (neuron-level): can a late block's Δ_i be reconstructed from earlier blocks'
+                       post-GELU hidden neurons ?  (fine-grained, causal)
 
-err near 0  -> Δ_i is reproducible from other blocks  -> cross-block redundancy real.
-control err should stay near 1.0 (else low err is a trivial artifact).
-
-Writes a table to probe_crossblock_result.txt.
+err near 0 AND control near 1.0  ->  real, non-trivial cross-block redundancy.
 """
 import os, torch, timm
 from torchvision import transforms
@@ -24,8 +22,9 @@ from torch.utils.data import DataLoader, Subset
 
 DATA = "/work/hdd/bdjd/imagenet_10pct"
 N_IMAGES = 160
-MAX_TOKENS = 16000
+MAX_TOKENS = 20000
 RIDGE = 1e-3
+LATE = [8, 9, 10, 11]
 OUT = "/work/hdd/bdjd/hypergraph_pruning/probe_crossblock_result.txt"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -39,15 +38,17 @@ ds = ImageFolder(os.path.join(DATA, "val"), transform=tf)
 idx = torch.randperm(len(ds), generator=torch.Generator().manual_seed(0))[:N_IMAGES].tolist()
 loader = DataLoader(Subset(ds, idx), batch_size=32, num_workers=4)
 
-# capture each block's MLP contribution to the residual (Δ_mlp, in residual space R^384)
-deltas = {b: [] for b in range(len(model.blocks))}
+N = len(model.blocks)
+delta = {b: [] for b in range(N)}   # MLP residual contribution (384)
+hidden = {b: [] for b in range(N)}  # post-GELU hidden neurons (1536)
 handles = []
-def mk(b):
+def mk(store, b):
     def hook(m, i, o):
-        deltas[b].append(o.detach().reshape(-1, o.shape[-1]).float().cpu())
+        store[b].append(o.detach().reshape(-1, o.shape[-1]).float().cpu())
     return hook
 for b, blk in enumerate(model.blocks):
-    handles.append(blk.mlp.register_forward_hook(mk(b)))
+    handles.append(blk.mlp.register_forward_hook(mk(delta, b)))
+    handles.append(blk.mlp.act.register_forward_hook(mk(hidden, b)))
 
 with torch.no_grad():
     for x, _ in loader:
@@ -55,61 +56,68 @@ with torch.no_grad():
 for h in handles:
     h.remove()
 
-N = len(model.blocks)
-D = {b: torch.cat(deltas[b], 0) for b in range(N)}     # each (tokens, 384)
-ntok = D[0].shape[0]
-if ntok > MAX_TOKENS:
-    sel = torch.randperm(ntok)[:MAX_TOKENS]
-    D = {b: D[b][sel].to(device) for b in range(N)}
-else:
-    D = {b: D[b].to(device) for b in range(N)}
+# stack + subsample + CENTER, move to GPU
+def finalize(store, sel):
+    out = {}
+    for b in range(N):
+        X = torch.cat(store[b], 0)[sel].to(device)
+        out[b] = X - X.mean(0, keepdim=True)        # center
+    return out
+
+ntok = torch.cat(delta[0], 0).shape[0]
+sel = torch.randperm(ntok)[:min(MAX_TOKENS, ntok)]
+D = finalize(delta, sel)
+H = finalize(hidden, sel)
 n = D[0].shape[0]
-embed = D[0].shape[1]
-
-
-def ls_err(dict_blocks, target, shuffle=False):
-    """Relative error of reconstructing target (n,384) from a fixed linear map
-    over the concatenated dictionary blocks (+ intercept). Ridge-regularized."""
-    if not dict_blocks:
-        return float("nan")
-    Dm = torch.cat([D[j] for j in dict_blocks], dim=1)          # (n, 384*|dict|)
-    if shuffle:
-        Dm = Dm[torch.randperm(n, device=Dm.device)]
-    ones = torch.ones(n, 1, device=Dm.device)
-    Dm = torch.cat([Dm, ones], dim=1)
-    G = Dm.t() @ Dm
-    lam = RIDGE * torch.trace(G) / G.shape[0]
-    M = torch.linalg.solve(G + lam*torch.eye(G.shape[0], device=Dm.device), Dm.t() @ target)
-    resid = target - Dm @ M
-    return float(resid.norm() / target.norm())
-
 
 lines = []
 def log(s): lines.append(s); print(s)
 
-log(f"cross-block reconstruction of each block's MLP contribution  (n={n} tokens)")
+
+def ls_err(F, Y, shuffle=False):
+    """Relative error reconstructing centered Y (n,d) from centered features F (n,p)."""
+    if shuffle:
+        F = F[torch.randperm(F.shape[0], device=F.device)]
+    p = F.shape[1]
+    G = F.t() @ F
+    lam = RIDGE * torch.trace(G) / p
+    M = torch.linalg.solve(G + lam*torch.eye(p, device=F.device), F.t() @ Y)
+    return float((Y - F @ M).norm() / Y.norm())
+
+
+# ---- Part A: block-level (centered) ----
+log(f"PART A  block-level cross-block reconstruction (centered, n={n})")
 log(f"{'block':>5} {'err_allOthers':>14} {'err_earlierOnly':>16} {'err_control':>12}")
 log("-"*52)
-ea_all, ea_caus = [], []
+ea, ec = [], []
 for i in range(N):
-    others  = [j for j in range(N) if j != i]
-    earlier = [j for j in range(i)]
-    e_all  = ls_err(others, D[i])
-    e_caus = ls_err(earlier, D[i]) if earlier else float("nan")
-    e_ctrl = ls_err(others, D[i], shuffle=True)
-    ea_all.append(e_all)
-    if earlier: ea_caus.append(e_caus)
-    cs = f"{e_caus:.3f}" if earlier else "  n/a"
+    others  = torch.cat([D[j] for j in range(N) if j != i], 1)
+    e_all   = ls_err(others, D[i])
+    e_ctrl  = ls_err(others, D[i], shuffle=True)
+    if i > 0:
+        earlier = torch.cat([D[j] for j in range(i)], 1)
+        e_caus  = ls_err(earlier, D[i]); ec.append(e_caus); cs = f"{e_caus:.3f}"
+    else:
+        cs = "  n/a"
+    ea.append(e_all)
     log(f"{i:>5} {e_all:>14.3f} {cs:>16} {e_ctrl:>12.3f}")
+log(f"mean: all-others={sum(ea)/len(ea):.3f}   earlier-only={sum(ec)/len(ec):.3f}   (control should be ~1.0)")
+
+# ---- Part B: neuron-level for late blocks (from earlier hidden neurons) ----
+log("")
+log(f"PART B  late blocks reconstructed from EARLIER hidden NEURONS (causal, centered)")
+log(f"{'block':>5} {'#earlierNeurons':>16} {'err_neuron':>11} {'err_control':>12}")
+log("-"*48)
+for i in LATE:
+    Fe = torch.cat([H[j] for j in range(i)], 1)     # earlier hidden neurons
+    e  = ls_err(Fe, D[i])
+    ctrl = ls_err(Fe, D[i], shuffle=True)
+    log(f"{i:>5} {Fe.shape[1]:>16} {e:>11.3f} {ctrl:>12.3f}")
 
 log("")
-log(f"mean err (all-others)     = {sum(ea_all)/len(ea_all):.3f}")
-log(f"mean err (earlier-only)   = {sum(ea_caus)/len(ea_caus):.3f}  (causal, foldable)")
-log("")
-log("READ: low err (<~0.3) AND control err near 1.0  ->  a block's work is")
-log("largely reproducible from OTHER blocks -> cross-block redundancy is REAL")
-log("and (for earlier-only) causally foldable. If err ~ control ~ 1.0, blocks")
-log("are independent and the cross-block idea is dead.")
+log("READ: centered err near 0 with control near 1.0 -> genuine cross-block")
+log("redundancy. Part B shows whether late blocks are reproducible from earlier")
+log("NEURONS (the actual fold units) -> exploitable for cross-block pruning.")
 
 open(OUT, "w").write("\n".join(lines)+"\n")
 print(f"\nSaved: {OUT}")
