@@ -12,7 +12,8 @@ import torch_pruning as tp
 
 from run import build_loaders, evaluate, finetune, count_macs
 from hyperedge_prune import (collect_mlp_stats, pivoted_cholesky,
-                             prune_mlp_hyperedge, calibrate_tau)
+                             prune_mlp_hyperedge, calibrate_tau,
+                             k_for_tau, prune_with_selection)
 
 
 def parse_args():
@@ -36,6 +37,10 @@ def parse_args():
     p.add_argument("--output_dir", default="./results/hyperedge")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--skip_finetune", action="store_true")
+    p.add_argument("--selection", default="cholesky",
+                   choices=["cholesky", "magnitude", "pairwise"],
+                   help="channel-selection method (fold is identical). "
+                        "cholesky=set-level(ours), pairwise=graph-style, magnitude=none")
     return p.parse_args()
 
 
@@ -70,14 +75,16 @@ def main():
         k99 = int(torch.searchsorted(var, torch.tensor(0.99)).item())
         print(f"  Block {b:2d}: {len(perm):4d} pivots (rank), k@99%var={k99}")
 
-    print(f"\n[Hyperedge] Calibrating tau to {args.target_macs_g}G...")
+    # Budget allocation is SHARED across selection methods so all hit identical
+    # MACs — only the choice of WHICH channels differs (isolates selection).
+    print(f"\n[Hyperedge] Calibrating tau to {args.target_macs_g}G (shared budget)...")
     tau = calibrate_tau(model, stats, perms, var_curves, args.target_macs_g,
                         device, count_macs, crop=args.val_crop)
-    print(f"  tau (variance retained) = {tau:.4f}")
+    kmap = {b: min(k_for_tau(var_curves[b], tau), len(perms[b])) for b in stats}
+    print(f"  tau = {tau:.4f}   kept hidden per block: {[kmap[b] for b in sorted(kmap)]}")
 
-    print("\n[Hyperedge] Applying fold+prune...")
-    kmap = prune_mlp_hyperedge(model, stats, perms, var_curves, tau)
-    print(f"  kept hidden per block: {[kmap[b] for b in sorted(kmap)]}")
+    print(f"\n[Hyperedge] Applying fold+prune with selection='{args.selection}'...")
+    prune_with_selection(model, stats, kmap, args.selection)
 
     pruned_macs, pruned_params = count_macs(model, device, args.val_crop)
     red = 1.0 - pruned_macs / base_macs
@@ -100,6 +107,7 @@ def main():
 
     results = {
         "model": args.model, "method": "hyperedge_mlp_v1",
+        "selection": args.selection,
         "tau": round(tau, 4),
         "target_macs_g": args.target_macs_g,
         "baseline_macs_g": round(base_macs/1e9, 4),

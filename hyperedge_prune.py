@@ -105,6 +105,64 @@ def pivoted_cholesky(cov, eps=1e-10):
 
 
 # ---------------------------------------------------------------------------
+# 2b. selection variants (for the novelty ablation) — all return a keep-list
+#     of length k.  The FOLD is identical afterwards; only WHICH channels are
+#     kept differs, isolating the value of set-level vs pairwise vs magnitude.
+# ---------------------------------------------------------------------------
+
+def select_cholesky(cov, k):
+    """Set-level: greedy spanning subset (orthogonalizes against the whole kept
+    set each step) — our method. Captures higher-order redundancy."""
+    perm, _ = pivoted_cholesky(cov)
+    if len(perm) < k:                      # pad with remaining (highest residual)
+        rest = [i for i in range(cov.shape[0]) if i not in set(perm)]
+        perm = perm + rest
+    return perm[:k]
+
+
+def select_magnitude(cov, k):
+    """No coupling at all: keep the k highest-variance channels."""
+    var = torch.diag(cov)
+    return torch.argsort(var, descending=True)[:k].tolist()
+
+
+def select_pairwise(cov, k):
+    """Pairwise (graph-style): max-min correlation greedy. Each step adds the
+    channel least correlated with the kept set, using ONLY pairwise correlation
+    (never the joint span). This is what a pairwise graph method can see."""
+    C = cov.shape[0]
+    d = torch.sqrt(torch.diag(cov).clamp(min=1e-12))
+    corr = (cov / (d[:, None] * d[None, :])).abs()
+    var = torch.diag(cov)
+    first = int(torch.argmax(var).item())
+    kept = [first]
+    maxcorr = corr[first].clone()
+    maxcorr[first] = 2.0
+    while len(kept) < k:
+        nxt = int(torch.argmin(maxcorr).item())
+        kept.append(nxt)
+        maxcorr = torch.maximum(maxcorr, corr[nxt])
+        maxcorr[nxt] = 2.0
+    return kept
+
+
+_SELECTORS = {"cholesky": select_cholesky,
+              "magnitude": select_magnitude,
+              "pairwise": select_pairwise}
+
+
+def prune_with_selection(model, stats, k_per_block, selection):
+    """Prune every MLP block to its keep-count using the chosen selection
+    method; fold is identical (least-squares reconstruction into fc2)."""
+    selfn = _SELECTORS[selection]
+    for b, blk in enumerate(model.blocks):
+        cov, mu = stats[b]
+        k = k_per_block[b]
+        keep = selfn(cov, k)
+        fold_block_mlp(blk, cov, mu, keep, k)
+
+
+# ---------------------------------------------------------------------------
 # 3. fold + prune one MLP block to keep-count k
 # ---------------------------------------------------------------------------
 
