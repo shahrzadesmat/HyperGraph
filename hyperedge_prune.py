@@ -117,25 +117,28 @@ def fold_block_mlp(block, cov, mu, perm, k, ridge=1e-6):
     D = [i for i in range(H) if i not in keepset]
 
     fc1, fc2 = block.mlp.fc1, block.mlp.fc2
-    Kt = torch.tensor(K, dtype=torch.long)
+    dev = fc2.weight.device
+    wdtype = fc2.weight.dtype
+    Kt = torch.tensor(K, dtype=torch.long, device=dev)
 
     if D:
-        Dt = torch.tensor(D, dtype=torch.long)
-        cov = cov.double()
+        Dt = torch.tensor(D, dtype=torch.long, device=dev)
+        cov = cov.to(dev).double()
+        mu = mu.to(dev).double()
         GKK = cov[Kt][:, Kt]
         GKD = cov[Kt][:, Dt]
         lam = ridge * (torch.trace(cov) / H)
-        A = torch.linalg.solve(GKK + lam * torch.eye(k, dtype=torch.float64), GKD)  # (k,|D|)
-        muK, muD = mu.double()[Kt], mu.double()[Dt]
+        A = torch.linalg.solve(GKK + lam * torch.eye(k, dtype=torch.float64, device=dev), GKD)  # (k,|D|)
+        muK, muD = mu[Kt], mu[Dt]
         beta = muD - A.t() @ muK                          # (|D|,) intercepts
 
-        W2 = fc2.weight.data.double()                     # (embed, H)
+        W2 = fc2.weight.data.double()                     # (embed, H), on dev
         W2K = W2[:, Kt] + W2[:, Dt] @ A.t()               # fold coeffs
         new_bias = (fc2.bias.data.double() if fc2.bias is not None
-                    else torch.zeros(W2.shape[0], dtype=torch.float64))
+                    else torch.zeros(W2.shape[0], dtype=torch.float64, device=dev))
         new_bias = new_bias + W2[:, Dt] @ beta            # fold intercepts
-        fc2.weight = nn.Parameter(W2K.to(fc2.weight.dtype))
-        fc2.bias = nn.Parameter(new_bias.to(fc2.weight.dtype))
+        fc2.weight = nn.Parameter(W2K.to(wdtype))
+        fc2.bias = nn.Parameter(new_bias.to(wdtype))
     fc2.in_features = k
 
     # fc1: keep rows K (same order as fc2 cols)
