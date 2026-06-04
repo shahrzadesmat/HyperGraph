@@ -89,7 +89,7 @@ def pivoted_cholesky(cov, eps=1e-10):
     C = cov.shape[0]
     d = torch.diag(cov).clone()
     total = d.sum().clamp(min=1e-30)
-    L = torch.zeros(C, C, dtype=torch.float64)
+    L = torch.zeros(C, C, dtype=torch.float64, device=cov.device)
     perm = []
     var = [0.0]
     for k in range(C):
