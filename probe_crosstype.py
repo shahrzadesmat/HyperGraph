@@ -12,7 +12,7 @@ cross-type redundancy that isomorphic pruning is structurally blind to.
 Both contributions live in the same 384-d residual space, so they are directly
 comparable. Train/test split + centering from the start (no overfit optimism).
 """
-import os, torch, timm
+import os, sys, torch, timm
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader, Subset
@@ -22,10 +22,12 @@ N_IMAGES = 200
 MAX_TOKENS = 24000
 TRAIN_FRAC = 0.7
 RIDGE = 1e-2
-OUT = "/work/hdd/bdjd/hypergraph_pruning/probe_crosstype_result.txt"
+OUT = None  # set after MODEL parsed
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = timm.create_model("deit_small_patch16_224", pretrained=True).eval().to(device)
+MODEL = sys.argv[1] if len(sys.argv) > 1 else "deit_small_patch16_224"
+model = timm.create_model(MODEL, pretrained=True).eval().to(device)
+OUT = f"/work/hdd/bdjd/hypergraph_pruning/probe_crosstype_{MODEL.split('_')[0]}_{MODEL.split('_')[1]}.txt"
 
 tf = transforms.Compose([
     transforms.Resize(256, interpolation=transforms.InterpolationMode.BICUBIC),
