@@ -1,0 +1,36 @@
+layer                  C  eff_rank  eff/C  meanMaxCorr  pairDup  totRedund   HO_gap
+----------------------------------------------------------------------------------
+b00_attn_out         384      56.6  0.147        0.409        6      327.4    321.4
+b00_mlp_hidden      1536     123.1   0.08         0.46        6     1412.9   1406.9
+b01_attn_out         384      25.6  0.067        0.372        0      358.4    358.4
+b01_mlp_hidden      1536     154.3    0.1        0.411        0     1381.7   1381.7
+b02_attn_out         384      60.2  0.157        0.323        0      323.8    323.8
+b02_mlp_hidden      1536     230.4   0.15        0.358        0     1305.6   1305.6
+b03_attn_out         384      42.3   0.11        0.337        0      341.7    341.7
+b03_mlp_hidden      1536     275.9   0.18        0.318        3     1260.1   1257.1
+b04_attn_out         384      67.0  0.175        0.322        0      317.0    317.0
+b04_mlp_hidden      1536     159.9  0.104        0.323        5     1376.1   1371.1
+b05_attn_out         384      80.6   0.21        0.299        0      303.4    303.4
+b05_mlp_hidden      1536     106.0  0.069        0.307        5     1430.0   1425.0
+b06_attn_out         384      89.3  0.232        0.274        0      294.7    294.7
+b06_mlp_hidden      1536     256.8  0.167        0.284        0     1279.2   1279.2
+b07_attn_out         384     100.9  0.263        0.265        0      283.1    283.1
+b07_mlp_hidden      1536     211.0  0.137        0.286        2     1325.0   1323.0
+b08_attn_out         384     113.9  0.297        0.247        0      270.1    270.1
+b08_mlp_hidden      1536     105.6  0.069        0.291        2     1430.4   1428.4
+b09_attn_out         384     128.2  0.334        0.233        0      255.8    255.8
+b09_mlp_hidden      1536     103.3  0.067        0.275        2     1432.7   1430.7
+b10_attn_out         384     115.2    0.3        0.239        0      268.8    268.8
+b10_mlp_hidden      1536      38.9  0.025        0.224        0     1497.1   1497.1
+b11_attn_out         384      98.4  0.256        0.284        0      285.6    285.6
+b11_mlp_hidden      1536      84.5  0.055        0.226        0     1451.5   1451.5
+
+INTERPRETATION:
+  MLP  hidden: mean eff/C = 0.099  (lower = more redundant)
+  MLP  mean pairwise-duplicate channels = 2 / 1536
+  MLP  mean HIGHER-ORDER gap = 1382 dims (redundancy invisible to pairwise methods)
+  Attn out: mean eff/C = 0.213
+  Attn mean HIGHER-ORDER gap = 302 dims
+
+If HO_gap >> pairDup, pairwise graph methods (GOHSP/DepGraph) leave most
+redundancy on the table -> a set-level (hypergraph) method has real headroom.
