@@ -42,7 +42,8 @@ N = len(layers)
 from datasets import load_dataset
 ds = load_dataset("wikitext", "wikitext-2-raw-v1", split="train")
 text = "\n".join(t for t in ds["text"] if len(t) > 50)
-ids = tok(text, return_tensors="pt").input_ids[0][: 400*SEQ_LEN]
+ncap = int(MAX_TOKENS * 1.4)
+ids = tok(text, return_tensors="pt").input_ids[0][: ((ncap//SEQ_LEN)+1)*SEQ_LEN]
 nseq = len(ids)//SEQ_LEN
 seqs = ids[:nseq*SEQ_LEN].view(nseq, SEQ_LEN)
 
