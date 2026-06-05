@@ -16,7 +16,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 MODEL = sys.argv[1]
 SEQ_LEN = 256
-MAX_TOKENS = 14000
+MAX_TOKENS = int(os.environ.get('MAX_TOKENS', 14000))
 TRAIN_FRAC = 0.7
 RIDGE = 1e-2
 PRECEDING = 6
@@ -63,6 +63,7 @@ with torch.no_grad():
         batch = seqs[s:s+8].to(device)
         model(batch)
 for h in handles: h.remove()
+del model; torch.cuda.empty_cache()   # free model before the linear-algebra phase
 
 ntok = torch.cat(attn[0],0).shape[0]
 sel = torch.randperm(ntok)[:min(MAX_TOKENS, ntok)]
