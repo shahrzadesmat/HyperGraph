@@ -1,5 +1,5 @@
 #!/bin/bash
-# Submit all four ablation runs as SLURM jobs.
+# Submit all ablation runs as SLURM jobs.
 # Usage: bash run_ablation.sh
 # Edit DATA_PATH and TARGET_MACS before running.
 
@@ -18,6 +18,7 @@ sbatch_run() {
     local S_MIN=$2
     local THETA=$3
     local ALPHA=$4
+    local LAM=${5:-1.0}
     local outdir="${BASE_DIR}/${name}"
 
     mkdir -p "$outdir"
@@ -45,11 +46,12 @@ PYTHONUNBUFFERED=1 python -u run.py \
   --S_min         ${S_MIN} \
   --theta         ${THETA} \
   --alpha         ${ALPHA} \
+  --lam           ${LAM} \
   --head_scale    ${HEAD_SCALE} \
   --epochs        ${EPOCHS} \
   --output_dir    ${outdir}
 "
-    echo "[Submitted] ${name}  S_min=${S_MIN}  theta=${THETA}  alpha=${ALPHA}  head_scale=${HEAD_SCALE}"
+    echo "[Submitted] ${name}  S_min=${S_MIN}  theta=${THETA}  alpha=${ALPHA}  lam=${LAM}"
 }
 
 # Ablation ladder — add one novel component at a time.
@@ -62,6 +64,34 @@ sbatch_run "plus_smin"     0.40  1.0   0.0   # + depth pruning (removes blocks 3
 sbatch_run "plus_theta"    0.40  0.05  0.0   # + per-group width ratios
 sbatch_run "plus_alpha"    0.40  0.05  0.3   # + functional-coupling boost (full method)
 
+# ---------------------------------------------------------------------------
+# Phase 2 — Idea #1: Entropy hybrid lambda sweep
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== Phase 2: Entropy-hybrid lambda sweep ==="
+
+# Sweep lam at the +S_min level to isolate Idea #1 contribution.
+# lam=1.0 is identical to plus_smin (reused, no new job needed).
+sbatch_run "smin_lam07"    0.40  1.0   0.0   0.7   # 70% bypass + 30% entropy
+sbatch_run "smin_lam05"    0.40  1.0   0.0   0.5   # 50/50 blend
+sbatch_run "smin_lam03"    0.40  1.0   0.0   0.3   # 30% bypass + 70% entropy
+sbatch_run "smin_lam00"    0.40  1.0   0.0   0.0   # pure entropy (data-free baseline)
+
+# Best lambda carried through to the full method row
+sbatch_run "full_lam07"    0.40  0.05  0.3   0.7   # full method + best entropy blend
+
 echo ""
 echo "Check progress: squeue -u \$USER"
 echo "Results:        ls ${BASE_DIR}/*/results.json"
+echo ""
+echo "Ablation ladder:"
+echo "  iso_baseline   → S_min=0,    theta=1.0,  alpha=0,   lam=1.0  (VainF baseline)"
+echo "  plus_smin      → S_min=0.40, theta=1.0,  alpha=0,   lam=1.0"
+echo "  plus_theta     → S_min=0.40, theta=0.05, alpha=0,   lam=1.0"
+echo "  plus_alpha     → S_min=0.40, theta=0.05, alpha=0.3, lam=1.0  (original full)"
+echo "  --- Idea #1: Entropy hybrid ---"
+echo "  smin_lam07     → S_min=0.40, theta=1.0,  alpha=0,   lam=0.7"
+echo "  smin_lam05     → S_min=0.40, theta=1.0,  alpha=0,   lam=0.5"
+echo "  smin_lam03     → S_min=0.40, theta=1.0,  alpha=0,   lam=0.3"
+echo "  smin_lam00     → S_min=0.40, theta=1.0,  alpha=0,   lam=0.0  (pure entropy)"
+echo "  full_lam07     → S_min=0.40, theta=0.05, alpha=0.3, lam=0.7  (best result)"

@@ -69,6 +69,9 @@ def parse_args():
     p.add_argument("--head_scale",      type=float, default=0.2,
                    help="r_attn_base = r_mlp_base * head_scale. "
                         "0.2 matches VainF DeiT-Small (head_dim_ratio=0.1, mlp_ratio=0.5).")
+    p.add_argument("--lam",             type=float, default=1.0,
+                   help="Entropy-hybrid weight for S_min sensitivity. "
+                        "1.0=pure bypass (original), 0.0=pure weight entropy (data-free).")
 
     # Fine-tuning
     p.add_argument("--epochs",         type=int,   default=30)
@@ -298,7 +301,8 @@ def main():
 
     # --- build hypergraph ---
     print(f"\n[Hypergraph] S_min={args.S_min}  theta={args.theta}  "
-          f"alpha={args.alpha}  edge_threshold={args.edge_threshold}")
+          f"alpha={args.alpha}  lam={args.lam}  "
+          f"edge_threshold={args.edge_threshold}")
     criterion_for_taylor = nn.CrossEntropyLoss()
     hg = build_hypergraph(
         model, calib_loader, criterion_for_taylor, device,
@@ -309,6 +313,7 @@ def main():
         alpha           = args.alpha,
         edge_threshold  = args.edge_threshold,
         head_scale      = args.head_scale,
+        lam             = args.lam,
     )
 
     # --- calibrate ratios to actually hit the MAC target ---
@@ -345,6 +350,7 @@ def main():
         "S_min":           args.S_min,
         "theta":           args.theta,
         "alpha":           args.alpha,
+        "lam":             args.lam,
         "head_scale":      args.head_scale,
         "edge_threshold":  args.edge_threshold,
         "target_macs_g":  args.target_macs_g,
@@ -369,6 +375,7 @@ def main():
     print("\n" + "=" * 60)
     print(f"  Model          : {args.model}")
     print(f"  S_min / theta / alpha : {args.S_min} / {args.theta} / {args.alpha}")
+    print(f"  lam                   : {args.lam}")
     print(f"  MACs           : {base_macs/1e9:.3f}G -> {pruned_macs/1e9:.3f}G  ({actual_ratio*100:.1f}% off)")
     print(f"  Params         : {base_params/1e6:.1f}M -> {pruned_params/1e6:.1f}M")
     print(f"  Baseline acc   : {base_acc:.4f}")
