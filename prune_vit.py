@@ -35,7 +35,7 @@ MAX_PRUNE      = 0.85  # hard cap on pruning ratio
 # after head_dim pruning; reshape to num_heads*head_dim instead).
 # ---------------------------------------------------------------------------
 
-def _patched_attn_forward(self, x):
+def _patched_attn_forward(self, x, attn_mask=None):
     B, N, C = x.shape
     inner = self.num_heads * self.head_dim
     qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
@@ -44,6 +44,8 @@ def _patched_attn_forward(self, x):
         q, k = self.q_norm(q), self.k_norm(k)
     q = q * self.scale
     attn = q @ k.transpose(-2, -1)
+    if attn_mask is not None:
+        attn = attn + attn_mask
     attn = attn.softmax(dim=-1)
     attn = self.attn_drop(attn)
     x = attn @ v

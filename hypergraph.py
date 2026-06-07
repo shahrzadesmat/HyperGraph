@@ -16,7 +16,7 @@ import math
 
 import torch
 import torch.nn as nn
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 MAX_PRUNE_RATIO = 0.85   # hard cap: never prune more than 85% of any layer via width
 
@@ -55,6 +55,27 @@ def compute_block_sensitivities(model: nn.Module,
         sensitivities[i] = min(s, 1.0)
 
     return sensitivities
+
+
+# ---------------------------------------------------------------------------
+# Step 1b — weight entropy scores  (Idea #1: Gardener hybrid)
+# ---------------------------------------------------------------------------
+
+def compute_entropy_scores(model: nn.Module) -> Dict[int, float]:
+    """
+    Data-free block importance via weight distribution entropy.
+    High entropy = diverse, information-rich weights = important block.
+    Uses histogram-based entropy over all weight values in each block.
+    No calibration data required.
+    """
+    entropies = {}
+    for i, block in enumerate(model.blocks):
+        weights = torch.cat([p.data.flatten() for p in block.parameters()])
+        hist = torch.histc(weights.float(), bins=256)
+        hist = hist / (hist.sum() + 1e-10)
+        hist = hist + 1e-10          # avoid log(0)
+        entropies[i] = -(hist * hist.log()).sum().item()
+    return entropies
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +220,7 @@ def apply_alpha_boost(scores: Dict[int, Dict],
             "mlp":  s["mlp"]  * factor,
         }
     return boosted
+
 
 
 # ---------------------------------------------------------------------------
@@ -352,21 +374,40 @@ def build_hypergraph(model: nn.Module,
                       theta: float = 1.0,
                       alpha: float = 0.0,
                       edge_threshold: float = 0.3,
-                      head_scale: float = 0.2) -> Dict:
+                      head_scale: float = 0.2,
+                      lam: float = 1.0) -> Dict:
     """
     Full pipeline.  Returns a dict with everything the pruner needs.
 
-    With S_min=0, theta=1.0, alpha=0.0, head_scale=0.2:
+    With S_min=0, theta=1.0, alpha=0.0, head_scale=0.2, lam=1.0:
         Reproduces VainF isomorphic pruning — one attn group at r_attn_base,
         one MLP group at r_mlp_base, r_attn_base = r_mlp_base * 0.2.
-    Each parameter extends this foundation independently.
+
+    lam (Idea #1 — Gardener hybrid):
+        S_combined = lam * S_bypass + (1-lam) * H_entropy_norm
+        lam=1.0 → pure bypass sensitivity (original behaviour)
+        lam=0.0 → pure weight entropy (data-free)
     """
-    # --- S_min: remove redundant blocks ---
-    sensitivities    = compute_block_sensitivities(model, calib_loader, device)
+    # --- S_min: entropy-hybrid sensitivity (Idea #1) ---
+    sensitivities = compute_block_sensitivities(model, calib_loader, device)
+
+    if lam < 1.0:
+        entropy_raw = compute_entropy_scores(model)
+        e_min = min(entropy_raw.values())
+        e_max = max(entropy_raw.values())
+        h_norm = {i: (e - e_min) / (e_max - e_min + 1e-8)
+                  for i, e in entropy_raw.items()}
+        sensitivities = {
+            i: lam * sensitivities[i] + (1.0 - lam) * h_norm[i]
+            for i in sensitivities
+        }
+        print(f"\n[Hypergraph] Entropy hybrid: lam={lam}  "
+              f"(1-lam={1-lam:.2f} weight on entropy)")
+
     surviving_blocks = {i: s for i, s in sensitivities.items() if s >= S_min}
     removed_blocks   = {i: s for i, s in sensitivities.items() if s <  S_min}
 
-    print(f"\n[Hypergraph] Block sensitivities:")
+    print(f"\n[Hypergraph] Block sensitivities (lam={lam}):")
     for i, s in sorted(sensitivities.items()):
         tag = " <- REMOVE" if i in removed_blocks else ""
         print(f"  Block {i:2d}: {s:.3f}{tag}")
@@ -379,15 +420,16 @@ def build_hypergraph(model: nn.Module,
     taylor_channels = compute_taylor_channels(model, calib_loader, criterion, device)
 
     # --- alpha: functional edges + importance boost ---
-    edges         = compute_functional_edges(scores, threshold=edge_threshold)
-    boosted_scores = apply_alpha_boost(scores, edges, alpha)
+    edges = compute_functional_edges(scores, threshold=edge_threshold)
 
-    print(f"\n[Hypergraph] Functional edges (alpha={alpha}, edge_threshold={edge_threshold}):")
+    boosted_scores = apply_alpha_boost(scores, edges, alpha)
+    print(f"\n[Hypergraph] Functional edges "
+          f"(alpha={alpha}, edge_threshold={edge_threshold}):")
     if edges:
         for (i, j), w in sorted(edges.items()):
-            print(f"  b{i}_attn -> b{j}_attn  weight={w:.3f}")
+            print(f"  b{i} -> b{j}  weight={w:.3f}")
     else:
-        print("  (none above threshold)")
+            print("  (none above threshold)")
 
     # --- theta: group surviving blocks ---
     groups = form_groups_by_theta(boosted_scores, theta)
@@ -419,4 +461,5 @@ def build_hypergraph(model: nn.Module,
         "groups":           groups,
         "ratios":           ratios,
         "taylor_channels":  taylor_channels,
+        "lam":              lam,
     }
