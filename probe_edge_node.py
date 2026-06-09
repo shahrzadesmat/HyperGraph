@@ -32,20 +32,23 @@ Dh = cfg.hidden_size // H
 layers = model.model.layers
 
 # ---------- needle examples: single-digit secret (one-token answer) ----------
-filler = ("The hallway was long and the lamps flickered softly in the evening air. "
-          "People walked past without noticing the quiet hum of the old building. ")
+import random
+rng = random.Random(0)
+filler = "The lamps flickered softly in the long quiet hall that evening. "
+def line(d, k):                                     # one secret line with k filler sentences
+    return f"The secret digit is {d}. " + filler*k + f"The secret digit is {d}.\n"
 exs = []
 for i in range(N_EX):
-    v = str((i * 7 + 3) % 10)                       # single digit 0-9
-    pre  = filler * (2 + (i % 4))
-    post = filler * (2 + ((i + 2) % 4))
-    prompt = pre + f"The secret digit is {v}. " + post + "The secret digit is"
+    v = str(i % 10)
+    demos = [str(x) for x in rng.sample([n for n in range(10) if n != i % 10], 2)]
+    prompt = line(demos[0], 1+i%3) + line(demos[1], 1+(i+1)%3) \
+             + f"The secret digit is {v}. " + filler*(1+(i+2)%3) + "The secret digit is"
     ids = tok(prompt, return_tensors="pt").input_ids[0]
-    tid = tok(f" {v}", add_special_tokens=False).input_ids[-1]   # the digit token
-    occ = (ids == tid).nonzero().flatten()
+    tid = tok(f"The secret digit is {v}", add_special_tokens=False).input_ids[-1]  # in-context digit token
+    occ = (ids == tid).nonzero().flatten()           # demos use other digits -> first occ = query needle
     if len(occ) == 0:
         continue
-    exs.append((ids, int(tid), int(occ[0])))         # first occurrence = needle
+    exs.append((ids, int(tid), int(occ[0])))
 
 # ---------- baseline + solve-check + NODE (one example at a time, with attentions) ----------
 NODE = np.zeros((L, H)); base_nll = {}; solved = []
