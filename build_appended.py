@@ -134,15 +134,18 @@ si=13; s=base(si,"Finding 3:  Amplification-Aware Allocation Beats FLAT-LLM")
 txt(s,si,0.40,1.00,12.5,0.4,[[("Same low-rank primitive, same total budget (",14,True,DARK),
     ("keep 50%",14,True,GREEN),("), Llama-2-7B WikiText perplexity — only the ",14,True,DARK),
     ("allocation",14,True,GREEN),(" differs.",14,True,DARK)]])
-rows=[("No compression",6.87,GREY),("Uniform",17.39,GREY),("FLAT-LLM  (SOTA)",14.56,ORANGE),("Ours  (amplification-joint)",13.96,GREEN)]
-x0,y0,rowh,maxw=4.55,1.78,0.70,7.0; mx=max(v for _,v,_ in rows)
-for i,(lab,v,col) in enumerate(rows):
+rows=[("No compression","the full, uncompressed model",6.87,GREY),
+      ("Uniform","every layer gets the SAME rank",17.39,GREY),
+      ("FLAT-LLM (SOTA)","rank set by block-influence score",14.56,ORANGE),
+      ("Ours","more rank to high-amplification layers, jointly",13.96,GREEN)]
+x0,y0,rowh,maxw=4.95,1.80,0.72,6.6; mx=max(v for _,_,v,_ in rows)
+for i,(lab,gloss,v,col) in enumerate(rows):
     yy=y0+i*rowh; hot=("Ours" in lab or "FLAT" in lab)
-    txt(s,si,0.45,yy+0.04,3.95,0.5,[[(lab,14,True,DARK if hot else GRAY)]],align=PP_ALIGN.RIGHT,name="rl")
+    txt(s,si,0.30,yy-0.05,4.45,0.62,[[(lab,14,True,DARK if hot else GRAY)],[(gloss,10,False,GRAY)]],align=PP_ALIGN.RIGHT,name="rl")
     w=maxw*v/mx
     rect(s,si,x0,yy,w,0.46,col,shape=MSO_SHAPE.ROUNDED_RECTANGLE,name="bar")
-    txt(s,si,x0+w+0.12,yy+0.03,1.4,0.4,[[(f"{v:.2f}",15,True,col)]],name="vl")
-txt(s,si,4.55,y0+4*rowh-0.04,7.5,0.3,[[("perplexity   (lower = better)",11,True,GRAY)]],name="cap")
+    txt(s,si,x0+w+0.12,yy+0.04,1.4,0.4,[[(f"{v:.2f}",15,True,col)]],name="vl")
+txt(s,si,4.95,y0+4*rowh-0.02,7.0,0.3,[[("perplexity   (lower = better)",11,True,GRAY)]],name="cap")
 rect(s,si,0.40,5.02,6.15,0.92,LG,name="c1"); rect(s,si,0.40,5.02,0.16,0.92,GREEN,name="c1b")
 txt(s,si,0.75,5.11,5.7,0.78,[[("−4.2%",24,True,GREEN)],[("vs FLAT-LLM  (faithful angular-BI baseline)",12,False,GRAY)]],name="c1t")
 rect(s,si,6.75,5.02,6.15,0.92,LB,name="c2"); rect(s,si,6.75,5.02,0.16,0.92,BLUE,name="c2b")
