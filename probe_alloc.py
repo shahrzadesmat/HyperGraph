@@ -24,8 +24,8 @@ MODEL = sys.argv[1]
 SEQ_LEN = 256
 CAL_TOKENS = 4000
 EVAL_SEQS, EVAL_LEN = 12, 1024
-AVG_FRAC = 0.25                                  # keep 25% of FFN rank on average
-RMIN_F, RMAX_F = 0.05, 0.75
+AVG_FRAC = 0.50                                  # keep 50% of FFN rank on average (sane ppl regime)
+RMIN_F, RMAX_F = 0.10, 0.90
 tag = MODEL.split("/")[-1]
 OUT = f"/work/hdd/bdjd/hypergraph_pruning/probe_alloc_{tag}.txt"
 
@@ -168,8 +168,8 @@ for b in range(N):
 log("")
 dl = (res['local']-res['joint'])/res['local']*100
 du = (res['uniform']-res['joint'])/res['uniform']*100
-log(f"JOINT vs LOCAL  : {dl:+.2f}%  perplexity (negative = JOINT better)")
-log(f"JOINT vs UNIFORM: {du:+.2f}%")
+log(f"JOINT vs LOCAL  : {dl:+.2f}%  perplexity reduction (positive = JOINT better)")
+log(f"JOINT vs UNIFORM: {du:+.2f}%  perplexity reduction (positive = JOINT better)")
 log("WIN if JOINT < LOCAL: amplification-aware allocation beats local-greedy (FLAT-LLM proxy).")
 open(OUT,"w").write("\n".join(lines)+"\n")
 print(f"\nSaved: {OUT}")
