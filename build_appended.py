@@ -49,7 +49,7 @@ txt(s,si,0.75,1.58,12.0,1.05,[[("What is “rank”, simply?    ",15,True,BLUE),
 # 3 columns
 cols=[("1","The primitive",BLUE,LB,"Approximate each FFN by a low-rank factor — keep its top patterns (directions). Fewer kept = less compute."),
       ("2","The budget",ORANGE,LY,"A fixed TOTAL rank is shared across all 32 layers. The core question: how much rank does each layer get?"),
-      ("3","Allocation — FLAT-LLM",RED,LP,"Score each layer LOCALLY (angular block-influence = how much it rotates the residual); give rank in proportion (IPRS).")]
+      ("3","Allocation — FLAT-LLM",RED,LP,"Score each layer by its block-influence — how much it changes the residual (the angle between what goes in and what comes out). More influence → keep more rank.")]
 cw,gap,x0,cy,ch=4.03,0.205,0.40,2.86,2.42
 for i,(n,h,acc,fill,body) in enumerate(cols):
     cx=x0+i*(cw+gap)
@@ -62,34 +62,25 @@ rect(s,si,0.40,5.55,12.5,0.80,LB,name="botstrip"); rect(s,si,0.40,5.55,0.16,0.80
 txt(s,si,0.75,5.64,12.0,0.65,[[("All SOTA low-rank methods (ASVD, SVD-LLM, FLAT-LLM) share this template:  ",13,True,BLUE),
     ("a per-layer LOCAL score, with each layer allocated independently.",13,False,DARK)]],anchor=MSO_ANCHOR.MIDDLE)
 
-# ===== SLIDE 10 : weakness we cure =====
-si=10; s=base(si,"The Weakness We Cure:  Layers Are Scored in Isolation")
-txt(s,si,0.40,1.00,12.5,0.4,[[("A local, per-layer score cannot see how a layer's compression error ",14,True,DARK),
-    ("travels through the rest of the network.",14,True,RED)]])
-rect(s,si,0.40,1.55,6.15,3.95,LP,name="L"); rect(s,si,0.40,1.55,0.16,3.95,RED,name="Lb")
-txt(s,si,0.75,1.70,5.6,0.5,[[("The blind spot",19,True,RED)]],name="Lh")
-txt(s,si,0.75,2.32,5.6,3.0,[[("Transformer layers form a chain through the residual stream.",13,True,DARK)],
-    [("",7,False,DARK)],
-    [("An error from compressing an ",13,False,GRAY),("early",13,True,DARK),
-     (" layer does not stay local — it ",13,False,GRAY),("propagates and amplifies",13,True,RED),
-     (" downstream (we measure up to ~30× at the output).",13,False,GRAY)],
-    [("",7,False,DARK)],
-    [("A local score is computed at ",13,False,GRAY),("one layer in isolation",13,True,DARK),
-     (" — structurally blind to this propagation.",13,False,GRAY)]],name="Lbody")
-rect(s,si,6.75,1.55,6.15,3.95,LG,name="R"); rect(s,si,6.75,1.55,0.16,3.95,GREEN,name="Rb")
-txt(s,si,7.10,1.70,5.6,0.5,[[("Our cure  (the novelty)",19,True,GREEN)]],name="Rh")
-txt(s,si,7.10,2.32,5.6,3.0,[[("Allocate rank by ",13,False,GRAY),("downstream impact",13,True,DARK),
-     (", not local importance:",13,False,GRAY)],
-    [("",7,False,DARK)],
-    [("•  measure each layer's ",13,False,GRAY),("error amplification",13,True,GREEN),(" to the output",13,False,GRAY)],
-    [("•  account for ",13,False,GRAY),("cross-layer coupling",13,True,GREEN),(" — allocate jointly, not greedily",13,False,GRAY)],
-    [("",7,False,DARK)],
-    [("Protect layers whose errors blow up;  compress hard where they damp.",13,True,DARK)]],name="Rbody")
-rect(s,si,0.40,5.70,12.5,1.05,LB,name="nov"); rect(s,si,0.40,5.70,0.16,1.05,BLUE,name="novb")
-txt(s,si,0.75,5.80,12.0,0.9,[[("Novelty in one line:  ",13,True,BLUE),
-    ("the first error-propagation-aware, cross-layer-coupled rank allocation for low-rank LLM compression.",13,True,DARK)],
-    [("Prior work allocates per layer in isolation; we allocate over the propagation graph.   ",12,False,GRAY),
-    ("(Result next: it beats FLAT-LLM at the same budget.)",12,False,GREEN)]],anchor=MSO_ANCHOR.MIDDLE)
+# ===== SLIDE 10 : low-rank vs other structured pruning + shared weakness =====
+si=10; s=base(si,"Low-Rank vs. Other Structured Pruning")
+txt(s,si,0.40,1.00,12.5,0.4,[[("Both are “structured” pruning (regular, hardware-friendly shapes) — they differ in ",14,True,DARK),("what they keep.",14,True,BLUE)]])
+# two contrast cards
+rect(s,si,0.40,1.50,6.15,2.02,LP,name="cl"); rect(s,si,0.40,1.50,0.16,2.02,ORANGE,name="clb")
+txt(s,si,0.75,1.63,5.6,0.4,[[("Remove units",18,True,ORANGE)]],name="clh")
+txt(s,si,0.75,2.10,5.6,1.0,[[("Delete whole ",13,False,GRAY),("channels, attention heads, or blocks",13,True,DARK),(".  The units left behind are the originals, unchanged.",13,False,GRAY)]],name="clb1")
+txt(s,si,0.75,3.04,5.6,0.4,[[("‹ the ViT channel / block pruning earlier in this talk ›",12,False,ORANGE)]],name="clb2")
+rect(s,si,6.75,1.50,6.15,2.02,LB,name="cr"); rect(s,si,6.75,1.50,0.16,2.02,BLUE,name="crb")
+txt(s,si,7.10,1.63,5.6,0.4,[[("Reduce rank   (these methods)",18,True,BLUE)]],name="crh")
+txt(s,si,7.10,2.10,5.6,1.3,[[("Keep no clean subset.  Replace a weight matrix  ",13,False,GRAY),("W ≈ A · B",13,True,DARK),("  with two smaller matrices — keeping a low-dimensional ",13,False,GRAY),("rotated subspace",13,True,DARK),(" (mixtures of neurons).   “Rank” = the inner size.",13,False,GRAY)]],name="crb1")
+# shared weakness
+rect(s,si,0.40,3.68,12.5,1.32,LP,name="wk"); rect(s,si,0.40,3.68,0.16,1.32,RED,name="wkb")
+txt(s,si,0.75,3.78,12.0,1.18,[[("The weakness both share:  ",14,True,RED),("either way, the method decides ",13,False,DARK),("per layer how much to cut",13,True,DARK),(", from a ",13,False,DARK),("LOCAL",13,True,DARK),(" score (importance / reconstruction at that layer alone).",13,False,DARK)],
+    [("It is blind to how an ",13,False,GRAY),("early layer's error amplifies downstream",13,True,RED),(" (~30× by the output) — the chain is ignored.",13,False,GRAY)]],name="wkt")
+# cure
+rect(s,si,0.40,5.16,12.5,1.45,LG,name="cu"); rect(s,si,0.40,5.16,0.16,1.45,GREEN,name="cub")
+txt(s,si,0.75,5.26,12.0,1.3,[[("Our cure — the novelty:  ",14,True,GREEN),("allocate rank by ",13,False,DARK),("downstream amplification",13,True,GREEN),(" and ",13,False,DARK),("cross-layer coupling",13,True,GREEN),(", jointly.",13,False,DARK)],
+    [("Protect layers whose errors blow up; compress hard where they damp.   ",13,False,GRAY),("The first error-propagation-aware allocation for low-rank LLM compression.",13,True,DARK)]],name="cut")
 
 # ===== SLIDE 11 : Finding 1 — FIXED chart =====
 si=11; s=base(si,"Finding 1:  Compression Error Amplifies with Depth")
@@ -158,7 +149,7 @@ rect(s,si,6.75,5.02,6.15,0.92,LB,name="c2"); rect(s,si,6.75,5.02,0.16,0.92,BLUE,
 txt(s,si,7.10,5.11,5.7,0.78,[[("−19.7%",24,True,BLUE)],[("vs Uniform allocation",12,False,GRAY)]],name="c2t")
 rect(s,si,0.40,6.10,12.5,0.95,LY,name="why"); rect(s,si,0.40,6.10,0.16,0.95,ORANGE,name="whyb")
 txt(s,si,0.75,6.18,12.0,0.82,[[("Why we win — the signals disagree:  ",12,True,ORANGE),
-    ("FLAT-LLM's angular BI protects boundary layers (0, 31);",12,False,DARK)],
+    ("FLAT-LLM's block-influence (how much a layer rotates the residual) favors boundary layers 0 & 31;",12,False,DARK)],
     [("amplification instead protects high-downstream-impact mid-early layers (2–5) and drains the damping tail.  ",12,False,DARK),
     ("Amp captures sensitivity BI misses.",12,True,DARK)]],anchor=MSO_ANCHOR.MIDDLE)
 
