@@ -79,8 +79,8 @@ txt(s,si,0.75,3.78,12.0,1.18,[[("The weakness both share:  ",14,True,RED),("eith
     [("It is blind to how an ",13,False,GRAY),("early layer's error amplifies downstream",13,True,RED),(" (~30× by the output) — the chain is ignored.",13,False,GRAY)]],name="wkt")
 # cure
 rect(s,si,0.40,5.16,12.5,1.45,LG,name="cu"); rect(s,si,0.40,5.16,0.16,1.45,GREEN,name="cub")
-txt(s,si,0.75,5.26,12.0,1.3,[[("Our cure — the novelty:  ",14,True,GREEN),("allocate rank by ",13,False,DARK),("downstream amplification",13,True,GREEN),(" and ",13,False,DARK),("cross-layer coupling",13,True,GREEN),(", jointly.",13,False,DARK)],
-    [("Protect layers whose errors blow up; compress hard where they damp.   ",13,False,GRAY),("The first error-propagation-aware allocation for low-rank LLM compression.",13,True,DARK)]],name="cut")
+txt(s,si,0.75,5.26,12.0,1.3,[[("Our approach:  ",14,True,GREEN),("allocate rank by ",13,False,DARK),("downstream amplification",13,True,GREEN),(" and ",13,False,DARK),("cross-layer coupling",13,True,GREEN),(", not a purely local per-layer score.",13,False,DARK)],
+    [("Protect layers whose errors blow up; compress hard where they damp.   ",13,False,GRAY),("Empirically: beats FLAT-LLM at the same budget (next slide).",13,True,DARK)]],name="cut")
 
 # ===== SLIDE 11 : Finding 1 — FIXED chart =====
 si=11; s=base(si,"Finding 1:  Compression Error Amplifies with Depth")
