@@ -17,7 +17,7 @@ WIN CONDITION: ppl(JOINT) < ppl(LOCAL) at the same total budget -> downstream
 error amplification is the signal local methods miss -> real, novel contribution.
 If ppl(JOINT) ~ ppl(LOCAL) -> amplification doesn't pay off; honest negative.
 """
-import os, sys, math, torch
+import os, sys, math, torch, numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 MODEL = sys.argv[1]
@@ -54,10 +54,22 @@ hid = {b: [] for b in range(N)}
 def cap(b):
     def h(m, i): hid[b].append(i[0].reshape(-1, i[0].shape[-1]).float().cpu())
     return h
-hs=[ffn(L).register_forward_pre_hook(cap(b)) for b,L in enumerate(layers)]
+# FLAT-LLM angular Block-Influence: arccos(cos(h_in,h_out))/pi over the whole decoder block
+bi_sum=[0.0]*N; bi_cnt=[0]*N
+def bicap(b):
+    def h(m, inp, out):
+        hi=inp[0].reshape(-1, inp[0].shape[-1]).float()
+        ho=(out[0] if isinstance(out, tuple) else out).reshape(-1, hi.shape[-1]).float()
+        cos=((hi*ho).sum(-1)/(hi.norm(dim=-1)*ho.norm(dim=-1)+1e-6)).clamp(-1,1)
+        ang=torch.arccos(cos)/math.pi
+        bi_sum[b]+=float(ang.sum()); bi_cnt[b]+=ang.numel()
+    return h
+hs =[ffn(L).register_forward_pre_hook(cap(b)) for b,L in enumerate(layers)]
+hs+=[L.register_forward_hook(bicap(b)) for b,L in enumerate(layers)]
 with torch.no_grad():
     clean_final = model(cal, output_hidden_states=True).hidden_states[-1].detach().float().reshape(-1).cpu()
 for h in hs: h.remove()
+BI = np.array([bi_sum[b]/max(bi_cnt[b],1) for b in range(N)])
 
 # ---- per-layer eigvecs (desc) + local-output error curve on a rank grid ----
 rmin, rmax = int(RMIN_F*Hdim), int(RMAX_F*Hdim)
@@ -116,10 +128,20 @@ def greedy(weight):                              # weight[b] multiplies local er
         if best<0: break
         r[best]+=step; rem-=step
     return r
+def proportional_allocation_with_cap(t, C):      # FLAT-LLM IPRS (compute_rank.py)
+    t=np.asarray(t,dtype=float); n=len(t); w=np.zeros(n); rem=np.arange(n)
+    while True:
+        ws=t[rem]/t[rem].sum()*C; clip=ws>1
+        if not clip.any(): w[rem]=ws; break
+        fx=rem[clip]; w[fx]=1.0; C-=len(fx); rem=rem[~clip]
+        if len(rem)==0: break
+    return w
+w_flat = proportional_allocation_with_cap(BI, AVG_FRAC*N)   # per-layer kept ratio
 alloc = {
- "uniform": [min(grid, key=lambda r:abs(r-int(AVG_FRAC*Hdim)))]*N,
- "local":   greedy([1.0]*N),
- "joint":   greedy(amp),
+ "uniform":  [min(grid, key=lambda r:abs(r-int(AVG_FRAC*Hdim)))]*N,
+ "local":    greedy([1.0]*N),
+ "flatllm":  [int(min(max(round(w_flat[b]*Hdim),1), Hdim)) for b in range(N)],
+ "joint":    greedy(amp),
 }
 
 # ---- perplexity under a rank allocation ----
@@ -161,15 +183,15 @@ for name,rks in alloc.items():
     p=perplexity(rks); res[name]=p
     log(f"{name:>8}  {sum(rks):>9}  {p:>11.3f}")
 log("")
-log("per-layer ranks (uniform / local / joint):")
-log(" lyr  amp   uniform  local  joint")
+log("per-layer ranks (uniform / local / flatllm / joint):")
+log(" lyr  amp     BI    uniform  local  flatllm  joint")
 for b in range(N):
-    log(f" {b:>3} {amp[b]:>5.2f}   {alloc['uniform'][b]:>6} {alloc['local'][b]:>6} {alloc['joint'][b]:>6}")
+    log(f" {b:>3} {amp[b]:>6.2f} {BI[b]:>6.3f}   {alloc['uniform'][b]:>6} {alloc['local'][b]:>6} {alloc['flatllm'][b]:>7} {alloc['joint'][b]:>6}")
 log("")
-dl = (res['local']-res['joint'])/res['local']*100
+df = (res['flatllm']-res['joint'])/res['flatllm']*100
 du = (res['uniform']-res['joint'])/res['uniform']*100
-log(f"JOINT vs LOCAL  : {dl:+.2f}%  perplexity reduction (positive = JOINT better)")
-log(f"JOINT vs UNIFORM: {du:+.2f}%  perplexity reduction (positive = JOINT better)")
-log("WIN if JOINT < LOCAL: amplification-aware allocation beats local-greedy (FLAT-LLM proxy).")
+log(f"JOINT vs FLAT-LLM: {df:+.2f}%  perplexity reduction (positive = JOINT better)")
+log(f"JOINT vs UNIFORM : {du:+.2f}%  perplexity reduction (positive = JOINT better)")
+log("WIN if JOINT < FLAT-LLM: amplification-aware allocation beats FLAT-LLM's angular-BI IPRS.")
 open(OUT,"w").write("\n".join(lines)+"\n")
 print(f"\nSaved: {OUT}")

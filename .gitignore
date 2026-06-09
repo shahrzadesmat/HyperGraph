@@ -8,3 +8,4 @@ results/
 .DS_Store
 wikitext_train.txt
 *.out
+FLAT-LLM/
