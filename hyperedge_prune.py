@@ -77,9 +77,10 @@ def collect_mlp_stats(model, loader, device, max_batches=None):
 # 2. pivoted Cholesky = greedy spanning column selection
 # ---------------------------------------------------------------------------
 
-def pivoted_cholesky(cov, eps=1e-10):
+def pivoted_cholesky(cov, eps=1e-10, maxk=None):
     """
     Greedy column subset selection on a PSD matrix.
+    maxk: stop after selecting this many pivots (default: full rank).
     Returns:
       perm           : list of channel indices in selection order (most info first)
       var_retained   : tensor, var_retained[k] = fraction of variance captured by
@@ -87,12 +88,13 @@ def pivoted_cholesky(cov, eps=1e-10):
     """
     cov = cov.clone().double()
     C = cov.shape[0]
+    kmax = C if maxk is None else min(C, maxk)
     d = torch.diag(cov).clone()
     total = d.sum().clamp(min=1e-30)
-    L = torch.zeros(C, C, dtype=torch.float64, device=cov.device)
+    L = torch.zeros(C, kmax, dtype=torch.float64, device=cov.device)
     perm = []
     var = [0.0]
-    for k in range(C):
+    for k in range(kmax):
         p = int(torch.argmax(d).item())
         if d[p] <= eps * total:
             break
