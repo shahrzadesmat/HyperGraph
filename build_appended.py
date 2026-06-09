@@ -184,6 +184,28 @@ txt(s,si,0.75,6.18,12.0,0.82,[[("Why we win — the signals disagree:  ",12,True
     [("amplification instead protects high-downstream-impact mid-early layers (2–5) and drains the damping tail.  ",12,False,DARK),
     ("Amp captures sensitivity BI misses.",12,True,DARK)]],anchor=MSO_ANCHOR.MIDDLE)
 
+# ===== SLIDE 15 : the two importance signals, up close =====
+si=15; s=base(si,"The Two Importance Signals, Up Close")
+txt(s,si,0.40,1.00,12.5,0.4,[[("Both pick which layers keep the most rank — but they measure ",14,True,DARK),("very different things.",14,True,BLUE)]])
+# LEFT: block-influence
+rect(s,si,0.40,1.50,6.15,5.18,LY,name="L"); rect(s,si,0.40,1.50,0.16,5.18,ORANGE,name="Lb")
+txt(s,si,0.75,1.64,5.6,0.45,[[("Block-influence   (FLAT-LLM)",17,True,ORANGE)]],name="Lh")
+rect(s,si,0.75,2.16,5.45,0.72,WHITE,shape=MSO_SHAPE.ROUNDED_RECTANGLE,name="Lf")
+txt(s,si,0.85,2.26,5.25,0.55,[[("angle( h_in , h_out )  =  arccos( cos )",13,True,DARK)]],align=PP_ALIGN.CENTER,anchor=MSO_ANCHOR.MIDDLE,name="Lft")
+txt(s,si,0.75,3.04,5.6,1.25,[[("How much does the layer ",13,False,GRAY),("rotate the residual",13,True,DARK),("?  A big turn ⇒ it transforms the representation a lot ⇒ treat it as important, keep more rank.",13,False,GRAY)]],name="Li")
+txt(s,si,0.75,4.40,5.6,0.5,[[("Local",13,True,ORANGE),(" — from one layer's own input vs. output.",13,False,GRAY)]],name="Lloc")
+txt(s,si,0.75,5.12,5.6,1.4,[[("Captures:  ",12,True,DARK),("how active a layer is.",12,False,GRAY)],
+    [("Misses:  ",12,True,RED),("whether that layer's error actually reaches the output.",12,False,GRAY)]],name="Lcm")
+# RIGHT: amplification
+rect(s,si,6.75,1.50,6.15,5.18,LG,name="R"); rect(s,si,6.75,1.50,0.16,5.18,GREEN,name="Rb")
+txt(s,si,7.10,1.64,5.6,0.45,[[("Downstream amplification   (ours)",17,True,GREEN)]],name="Rh")
+rect(s,si,7.10,2.16,5.45,0.72,WHITE,shape=MSO_SHAPE.ROUNDED_RECTANGLE,name="Rf")
+txt(s,si,7.20,2.26,5.25,0.55,[[("Δ final output  ÷  Δ this layer's output",13,True,DARK)]],align=PP_ALIGN.CENTER,anchor=MSO_ANCHOR.MIDDLE,name="Rft")
+txt(s,si,7.10,3.04,5.6,1.25,[[("How much does the layer's compression error ",13,False,GRAY),("grow",13,True,DARK),(" by the time it reaches the logits?  Big ⇒ protect it;  small ⇒ safe to compress.",13,False,GRAY)]],name="Ri")
+txt(s,si,7.10,4.40,5.6,0.6,[[("Global + joint",13,True,GREEN),(" — layers' errors interact (banded), so ranks are set together, not greedily.",13,False,GRAY)]],name="Rj")
+txt(s,si,7.10,5.20,5.6,1.4,[[("Captures:  ",12,True,DARK),("the true end-to-end cost.",12,False,GRAY)],
+    [("Range:  ",12,True,GREEN),("~30× at early layers, <1× at the tail.",12,False,GRAY)]],name="Rcm")
+
 # ===== VALIDATE geometry =====
 bad=[]
 for (si,name,l,t,w,h) in BOXES:
