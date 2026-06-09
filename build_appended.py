@@ -129,8 +129,36 @@ txt(s,si,0.75,6.43,12.0,0.64,[[("The adjacency is real:  ",13,True,BLUE),
     ("a banded error-coupling graph over the residual stream → rank allocation is a ",13,False,DARK),
     ("joint",13,True,DARK),(" problem, which per-layer greedy methods cannot solve.",13,False,DARK)]],anchor=MSO_ANCHOR.MIDDLE)
 
-# ===== SLIDE 13 : Finding 3 — beats FLAT-LLM =====
-si=13; s=base(si,"Finding 3:  Amplification-Aware Allocation Beats FLAT-LLM")
+# ===== SLIDE 13 (new) : how the three methods allocate rank =====
+si=13; s=base(si,"How the Three Methods Allocate the Rank Budget")
+txt(s,si,0.40,1.00,12.5,0.4,[[("Every method spends the ",14,True,DARK),("same total rank",14,True,GREEN),
+    (" — they differ only in ",14,True,DARK),("which layers get more.",14,True,BLUE)]])
+LGREY=RGBColor(0xEE,0xEE,0xEE)
+cols=[("Uniform",GREY,LGREY,"Give every layer the same rank.",
+       "Uses no signal at all — the naive baseline.",[0.5]*8),
+      ("FLAT-LLM  (SOTA)",ORANGE,LY,"Rank set by block-influence (how much a layer rotates the residual).",
+       "Protects boundary layers (0 & 31); compresses the middle.",[1.0,0.62,0.62,0.55,0.51,0.29,0.39,0.93]),
+      ("Ours — amplification-joint",GREEN,LG,"Rank set by measured downstream amplification, allocated jointly across coupled layers.",
+       "Protects high-impact early / mid layers (2–5); drains the damping tail.",[0.57,0.90,0.90,0.52,0.45,0.40,0.37,0.37])]
+labs=["0","2","5","10","16","24","30","31"]
+cw,gap,x0,cy,ch=4.03,0.205,0.40,1.52,4.85
+for i,(name,acc,fill,rule,protect,prof) in enumerate(cols):
+    cx=x0+i*(cw+gap)
+    rect(s,si,cx,cy,cw,ch,fill,name="col"); rect(s,si,cx,cy,cw,0.10,acc,name="ct")
+    txt(s,si,cx+0.22,cy+0.22,cw-0.44,0.4,[[(name,15,True,acc)]],name="cn")
+    txt(s,si,cx+0.22,cy+0.72,cw-0.44,1.0,[[(rule,12,False,GRAY)]],name="cr")
+    bb,bmaxh=cy+3.40,1.40
+    nb=len(prof); bw=0.30; gp=((cw-0.60)-nb*bw)/(nb-1); bx0=cx+0.30
+    for j,hv in enumerate(prof):
+        bh=bmaxh*hv; bxx=bx0+j*(bw+gp)
+        rect(s,si,bxx,bb-bh,bw,bh,acc,shape=MSO_SHAPE.ROUNDED_RECTANGLE,name="pb")
+        txt(s,si,bxx-0.10,bb+0.03,bw+0.2,0.2,[[(labs[j],7,False,GRAY)]],align=PP_ALIGN.CENTER,name="pl")
+    txt(s,si,cx+0.22,cy+3.74,cw-0.44,0.3,[[("rank per layer  (L0 → L31)",9,False,GRAY)]],name="pcap")
+    txt(s,si,cx+0.22,cy+4.06,cw-0.44,0.7,[[("Protects:  ",11,True,acc),(protect,11,False,GRAY)]],name="cp")
+txt(s,si,0.40,6.55,12.5,0.35,[[("Same budget, different shape — next slide: which shape gives the lowest perplexity.",12,True,DARK)]],align=PP_ALIGN.CENTER,name="foot")
+
+# ===== SLIDE 14 : Finding 3 — beats FLAT-LLM =====
+si=14; s=base(si,"Finding 3:  Amplification-Aware Allocation Beats FLAT-LLM")
 txt(s,si,0.40,1.00,12.5,0.4,[[("Same low-rank primitive, same total budget (",14,True,DARK),
     ("keep 50%",14,True,GREEN),("), Llama-2-7B WikiText perplexity — only the ",14,True,DARK),
     ("allocation",14,True,GREEN),(" differs.",14,True,DARK)]])
