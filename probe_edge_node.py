@@ -43,8 +43,8 @@ exs = []
 for i in range(N_EX):
     v = str(i % 10)
     demos = [str(x) for x in rng.sample([n for n in range(10) if n != i % 10], 2)]
-    text = line(demos[0], 1+i%3) + line(demos[1], 1+(i+1)%3) \
-           + f"{Q} {v}. " + filler*(1+(i+2)%3) + Q
+    # 1 short demo (format) + LONG single-mention query -> stresses sparse retrieval heads
+    text = line(demos[0], 2) + f"{Q} {v}. " + filler*(10+i%4) + Q
     pid = tok(text, return_tensors="pt").input_ids[0].tolist()
     ctoks = tok(f"{Q} {v}", add_special_tokens=False).input_ids[len(bpref):]  # tokens for " v": [space,digit] or [digit]
     tid = int(ctoks[-1])                                            # the DIGIT token
