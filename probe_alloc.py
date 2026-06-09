@@ -115,6 +115,31 @@ for i in range(N):
     de2e = float((clean_final-cf).norm())
     amp.append(de2e/(dloc+1e-6)); Vr=None; torch.cuda.empty_cache()
 
+# ---- Fisher / loss-gradient layer sensitivity (loss-aware allocation baseline) ----
+# S_i = mean over tokens of ||dL/dh_i||^2 ; h_i = FFN-hidden (down_proj input).
+# Params kept grad-free; only the FFN-hidden activations carry grad -> cheap backward.
+for p in model.parameters(): p.requires_grad_(False)
+fish=[0.0]*N; fcnt=[0]*N
+def fmk(b, first):
+    def pre(m, inp):
+        x=inp[0]
+        if first and not x.requires_grad: x.requires_grad_(True)   # seed grad at layer 0
+        if x.requires_grad:
+            def hk(g,b=b):
+                fish[b]+=float((g.detach().float()**2).sum())
+                fcnt[b]+=g.shape[0]*g.shape[1] if g.dim()==3 else g.shape[0]
+            x.register_hook(hk)
+        return (x,)+tuple(inp[1:])
+    return pre
+fhs=[ffn(L).register_forward_pre_hook(fmk(b, b==0)) for b,L in enumerate(layers)]
+torch.set_grad_enabled(True)
+for s in range(cal.shape[0]):
+    x=cal[s:s+1]
+    out=model(x, labels=x); out.loss.backward(); model.zero_grad(set_to_none=True)
+torch.set_grad_enabled(False)
+for h in fhs: h.remove()
+Sfish=[fish[b]/max(fcnt[b],1) for b in range(N)]
+
 # ---- allocators ----
 TOTAL = int(AVG_FRAC*N*Hdim)
 def greedy(weight):                              # weight[b] multiplies local error reduction
@@ -141,6 +166,7 @@ alloc = {
  "uniform":  [min(grid, key=lambda r:abs(r-int(AVG_FRAC*Hdim)))]*N,
  "local":    greedy([1.0]*N),
  "flatllm":  [int(min(max(round(w_flat[b]*Hdim),1), Hdim)) for b in range(N)],
+ "fisher":   greedy(Sfish),
  "joint":    greedy(amp),
 }
 
@@ -183,15 +209,17 @@ for name,rks in alloc.items():
     p=perplexity(rks); res[name]=p
     log(f"{name:>8}  {sum(rks):>9}  {p:>11.3f}")
 log("")
-log("per-layer ranks (uniform / local / flatllm / joint):")
-log(" lyr  amp     BI    uniform  local  flatllm  joint")
+log("per-layer ranks (uniform / local / flatllm / fisher / joint):")
+log(" lyr  amp     BI     Sfish    uniform  local  flatllm  fisher  joint")
 for b in range(N):
-    log(f" {b:>3} {amp[b]:>6.2f} {BI[b]:>6.3f}   {alloc['uniform'][b]:>6} {alloc['local'][b]:>6} {alloc['flatllm'][b]:>7} {alloc['joint'][b]:>6}")
+    log(f" {b:>3} {amp[b]:>6.2f} {BI[b]:>6.3f} {Sfish[b]:>8.2e}   {alloc['uniform'][b]:>6} {alloc['local'][b]:>6} {alloc['flatllm'][b]:>7} {alloc['fisher'][b]:>6} {alloc['joint'][b]:>6}")
 log("")
-df = (res['flatllm']-res['joint'])/res['flatllm']*100
-du = (res['uniform']-res['joint'])/res['uniform']*100
-log(f"JOINT vs FLAT-LLM: {df:+.2f}%  perplexity reduction (positive = JOINT better)")
+dfl = (res['flatllm']-res['joint'])/res['flatllm']*100
+dfi = (res['fisher']-res['joint'])/res['fisher']*100
+du  = (res['uniform']-res['joint'])/res['uniform']*100
+log(f"JOINT vs FISHER  : {dfi:+.2f}%  perplexity reduction (positive = JOINT better)   <-- the decisive baseline")
+log(f"JOINT vs FLAT-LLM: {dfl:+.2f}%  perplexity reduction (positive = JOINT better)")
 log(f"JOINT vs UNIFORM : {du:+.2f}%  perplexity reduction (positive = JOINT better)")
-log("WIN if JOINT < FLAT-LLM: amplification-aware allocation beats FLAT-LLM's angular-BI IPRS.")
+log("VERDICT: if JOINT ~ FISHER, measured amplification does NOT beat loss-gradient sensitivity -> no gap.")
 open(OUT,"w").write("\n".join(lines)+"\n")
 print(f"\nSaved: {OUT}")
