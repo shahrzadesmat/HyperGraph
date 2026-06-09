@@ -84,6 +84,7 @@ for b in range(N):
 # ---- amplification amp_i (error-prop) at reference rank = AVG_FRAC ----
 rref = int(AVG_FRAC*Hdim)
 def proj_hook_factory(Vr):
+    Vr = Vr.float()
     def ph(m, inp):
         x=inp[0]; xp=((x.float()@Vr)@Vr.t()).to(x.dtype); return (xp,)+inp[1:]
     return ph
