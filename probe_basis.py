@@ -78,7 +78,7 @@ for b in range(N):
     mu = Hall[trI].mean(0, keepdim=True)
     Htr = Hall[trI]-mu; Hte = Hall[teI]-mu
     cov = (Htr.t()@Htr).double()
-    perm, _ = pivoted_cholesky(cov)                       # channel order (train)
+    perm, _ = pivoted_cholesky(cov, maxk=max(ks))         # channel order (train), capped
     evals, evecs = torch.linalg.eigh(cov)                 # ascending
     nrm = Hte.norm()
     cells=[]
