@@ -1,0 +1,22 @@
+CROSS-TYPE redundancy: reconstruct MLP contribution from ATTENTION (held-out)
+n_train=16800 n_test=7200
+ blk  mlp<-attn_self  mlp<-attn_local   control
+------------------------------------------------
+   0           0.778            0.537     1.007
+   1           0.640            0.552     1.005
+   2           0.808            0.717     1.012
+   3           0.875            0.793     1.011
+   4           0.867            0.782     1.014
+   5           0.676            0.608     1.010
+   6           0.604            0.546     1.012
+   7           0.712            0.639     1.018
+   8           0.770            0.695     1.017
+   9           0.700            0.618     1.016
+  10           0.596            0.501     1.018
+  11           0.681            0.600     1.014
+mean: self=0.726  local=0.632  (control ~1.0)
+
+READ: low held-out err + control ~1.0 -> MLP work is partly reproducible from
+ATTENTION -> cross-type redundancy exists -> isomorphic's within-type
+assumption leaves redundancy unexploited. If err ~ 1.0, attn & MLP are
+independent and isomorphic's assumption holds (idea dead).

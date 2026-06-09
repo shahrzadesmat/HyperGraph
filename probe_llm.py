@@ -19,7 +19,7 @@ SEQ_LEN = 256
 MAX_TOKENS = int(os.environ.get('MAX_TOKENS', 14000))
 TRAIN_FRAC = 0.7
 RIDGE = 1e-2
-PRECEDING = 6
+PRECEDING = int(os.environ.get('PRECEDING', 3))
 tag = MODEL.split("/")[-1]
 OUT = f"/work/hdd/bdjd/hypergraph_pruning/probe_llm_{tag}.txt"
 
@@ -38,11 +38,10 @@ else:                                                # Llama / Mistral / Qwen
     mlp_mod  = lambda L: L.mlp.down_proj
 N = len(layers)
 
-# text
-from datasets import load_dataset
-ds = load_dataset("wikitext", "wikitext-2-raw-v1", split="train")
-text = "\n".join(t for t in ds["text"] if len(t) > 50)
+# text (read local file to avoid datasets/hub dependency on offline compute nodes)
 ncap = int(MAX_TOKENS * 1.4)
+with open("/work/hdd/bdjd/hypergraph_pruning/wikitext_train.txt") as f:
+    text = f.read(int(ncap * 8))                 # ~8 chars/token, enough slice
 ids = tok(text, return_tensors="pt").input_ids[0][: ((ncap//SEQ_LEN)+1)*SEQ_LEN]
 nseq = len(ids)//SEQ_LEN
 seqs = ids[:nseq*SEQ_LEN].view(nseq, SEQ_LEN)
@@ -53,7 +52,7 @@ handles = []
 def mk(store, b):
     def hook(m, i, o):
         out = o[0] if isinstance(o, tuple) else o
-        store[b].append(out.detach().reshape(-1, out.shape[-1]).float().cpu())
+        store[b].append(out.detach().reshape(-1, out.shape[-1]).half().cpu())  # fp16 to save RAM
     return hook
 for b, L in enumerate(layers):
     handles.append(attn_mod(L).register_forward_hook(mk(attn, b)))
@@ -68,24 +67,28 @@ del model; torch.cuda.empty_cache()   # free model before the linear-algebra pha
 
 ntok = torch.cat(attn[0],0).shape[0]
 sel = torch.randperm(ntok)[:min(MAX_TOKENS, ntok)]
-A  = {b: torch.cat(attn[b],0)[sel].to(device) for b in range(N)}
-Mp = {b: torch.cat(mlp[b],0)[sel].to(device) for b in range(N)}
-n = A[0].shape[0]; ntr = int(TRAIN_FRAC*n)
-pm = torch.randperm(n, device=device); trI, teI = pm[:ntr], pm[ntr:]
-def sc(X):
-    mu = X[trI].mean(0, keepdim=True); return X[trI]-mu, X[teI]-mu
+n = sel.shape[0]; ntr = int(TRAIN_FRAC*n)
+pm = torch.randperm(n); trI, teI = pm[:ntr], pm[ntr:]
+def sc(X):  # X fp16 on CPU -> centered fp32 train/test (mean over train)
+    X = X.float(); mu = X[trI].mean(0, keepdim=True); return X[trI]-mu, X[teI]-mu
+# build centered train/test per block, freeing raw immediately to bound RAM
 Atr,Ate,Mtr,Mte = {},{},{},{}
 for b in range(N):
-    Atr[b],Ate[b] = sc(A[b]); Mtr[b],Mte[b] = sc(Mp[b])
+    Atr[b],Ate[b] = sc(torch.cat(attn[b],0)[sel]); attn[b] = None
+    Mtr[b],Mte[b] = sc(torch.cat(mlp[b],0)[sel]);   mlp[b]  = None
+del attn, mlp
 def fe(Ftr,Ytr,Fte,Yte,shuffle=False):
-    if shuffle: Ftr = Ftr[torch.randperm(Ftr.shape[0], device=Ftr.device)]
+    Ftr,Ytr,Fte,Yte = Ftr.to(device),Ytr.to(device),Fte.to(device),Yte.to(device)
+    if shuffle: Ftr = Ftr[torch.randperm(Ftr.shape[0], device=device)]
     p = Ftr.shape[1]; G = Ftr.t()@Ftr; lam = RIDGE*torch.trace(G)/p
-    M = torch.linalg.solve(G+lam*torch.eye(p, device=Ftr.device), Ftr.t()@Ytr)
-    return float((Yte-Fte@M).norm()/Yte.norm())
+    M = torch.linalg.solve(G+lam*torch.eye(p, device=device), Ftr.t()@Ytr)
+    r = float((Yte-Fte@M).norm()/Yte.norm())
+    del Ftr,Ytr,Fte,Yte,G,M; torch.cuda.empty_cache()
+    return r
 
 lines=[];
 def log(s): lines.append(s); print(s)
-log(f"MODEL={MODEL}  layers={N}  hidden={A[0].shape[1]}  n_train={ntr} n_test={n-ntr}")
+log(f"MODEL={MODEL}  layers={N}  hidden={Atr[0].shape[1]}  n_train={ntr} n_test={n-ntr}  preceding={PRECEDING}")
 
 # CROSS-TYPE
 log("\nCROSS-TYPE: mlp <- attention (held-out)")
