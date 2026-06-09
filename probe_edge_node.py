@@ -65,31 +65,32 @@ if solved: NODE_attn /= len(solved)
 # ---------- NODE_grad: gradient/Taylor head importance (SlimGPT/HIS-style) ----------
 for p in model.parameters(): p.requires_grad_(False)
 acts, grads = {}, {}
-def seed(m, i, o): o.requires_grad_(True); return o
 def cap(l):
     def pre(m, inp):
-        a = inp[0]
+        a = inp[0]; acts[l] = a
         if a.requires_grad:
-            acts[l] = a
             a.register_hook(lambda g, l=l: grads.__setitem__(l, g.detach()))
     return pre
-eh = model.model.embed_tokens.register_forward_hook(seed)
 chs = [layers[l].self_attn.o_proj.register_forward_pre_hook(cap(l)) for l in range(L)]
-NODE_grad = np.zeros((L, H))
+NODE_grad = np.zeros((L, H)); ngn = 0
 torch.set_grad_enabled(True)
 for i in solved:
     ids, tid, _ = exs[i]
-    out = model(ids.unsqueeze(0).to(device))
+    emb = model.model.embed_tokens(ids.unsqueeze(0).to(device)).detach().requires_grad_(True)
+    acts.clear(); grads.clear()
+    out = model(inputs_embeds=emb)
     loss = -torch.log_softmax(out.logits[0, -1].float(), -1)[tid]
-    acts.clear(); grads.clear(); loss.backward()
+    loss.backward()
     for l in range(L):
+        if l not in grads: continue
         a = acts[l].detach().float(); g = grads[l].float()
         ga = (g * a).reshape(-1, H, Dh).sum(-1)              # [tok, H] per-head Taylor
         NODE_grad[l] += (ga ** 2).sum(0).cpu().numpy()
-    model.zero_grad(set_to_none=True); del out, loss; torch.cuda.empty_cache()
+    ngn += 1
+    model.zero_grad(set_to_none=True); del out, loss, emb; torch.cuda.empty_cache()
 torch.set_grad_enabled(False)
-eh.remove(); [h.remove() for h in chs]
-if solved: NODE_grad /= len(solved)
+[h.remove() for h in chs]
+if ngn: NODE_grad /= ngn
 
 # ---------- EDGE: composition centrality ----------
 EDGE = np.zeros((L, H))
