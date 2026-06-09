@@ -1,0 +1,24 @@
+PAIRWISE error interaction — graph or curve?
+MODEL=meta-llama/Llama-2-7b-hf  layers=32  rank=3302/11008=30%
+
+OVERLAP |cos| off-diagonal:  mean=0.335  median=0.369  max=0.509
+INTERACT iota off-diagonal:  mean=0.599  median=0.631  max=0.714
+
+locality |cos|:  adjacent(|i-j|=1)=0.460   distant(|i-j|>=8)=0.282
+locality iota :  adjacent(|i-j|=1)=0.700   distant(|i-j|>=8)=0.554
+
+block-averaged |cos| (4-layer blocks) — look for off-diagonal structure:
+  0.61 0.46 0.44 0.41 0.37 0.32 0.25 0.12
+  0.46 0.61 0.48 0.45 0.40 0.34 0.27 0.13
+  0.44 0.48 0.62 0.47 0.43 0.36 0.28 0.13
+  0.41 0.45 0.47 0.61 0.45 0.38 0.30 0.14
+  0.37 0.40 0.43 0.45 0.60 0.42 0.33 0.15
+  0.32 0.34 0.36 0.38 0.42 0.59 0.39 0.18
+  0.25 0.27 0.28 0.30 0.33 0.39 0.58 0.24
+  0.12 0.13 0.13 0.14 0.15 0.18 0.24 0.39
+
+VERDICT GUIDE:
+  off-diag ~0 & adjacent~distant  -> CURVE only (independent layers, heuristic)
+  adjacent >> distant             -> LOCAL/banded graph (neighbour coupling)
+  block structure off-diagonal    -> COMMUNITY graph (real structural novelty)
+  uniformly high everywhere       -> dense global coupling (not a sparse graph)
