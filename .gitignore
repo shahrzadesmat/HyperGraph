@@ -9,3 +9,6 @@ results/
 wikitext_train.txt
 *.out
 FLAT-LLM/
+deck_preview.png
+slide11_zoom.png
+*.png
