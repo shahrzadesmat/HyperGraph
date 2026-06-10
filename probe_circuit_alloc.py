@@ -21,7 +21,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 MODEL = sys.argv[1] if len(sys.argv) > 1 else "meta-llama/Llama-2-7b-hf"
 SEQ_LEN, N_CAL, EVAL_SEQ, EVAL_LEN = 256, 16, 12, 512
-BUDGETS = [16, 24, 32]                              # avg rank per circuit-head (out of d_head)
+BUDGETS = [128, 80, 64, 48]            # 128=full-rank sanity; then mild->moderate
 tag = MODEL.split("/")[-1]
 OUT = f"/work/hdd/bdjd/hypergraph_pruning/probe_circuit_alloc_{tag}.txt"
 device = torch.device("cuda")
@@ -59,8 +59,8 @@ for h in hs: h.remove()
 Vq=torch.zeros(L,Hq,Dh,Dh,dtype=torch.float16); Vk=Vq.clone(); Vov=Vq.clone()
 QKeff=np.zeros((L,Hq)); OVeff=np.zeros((L,Hq))
 def basis_eff(M):                                  # M [tok,Dh] -> (Vdesc [Dh,Dh], effrank@90)
-    M=(M-M.mean(0,keepdim=True)).to(device)
-    cov=(M.t()@M).double()
+    M=M.to(device)                                 # UNCENTERED 2nd moment: keeps the mean/DC
+    cov=(M.t()@M).double()                         # direction so raw-activation projection is valid
     evl,evec=torch.linalg.eigh(cov)
     Vd=evec.flip(1).float()
     e=evl.flip(0).clamp(min=0); c=torch.cumsum(e,0)/e.sum().clamp(min=1e-12)
@@ -77,9 +77,15 @@ for l in range(L):
 Vq=Vq.to(device); Vk=Vk.to(device); Vov=Vov.to(device)
 gmean=(QKeff.sum()+OVeff.sum())/(2*L*Hq)
 
-# ---- allocations (matched total budget: global mean rank = R for both) ----
-def alloc_sym(R):  return np.full((L,Hq),R,int), np.full((L,Hq),R,int)
-def alloc_asym(R):
+# ---- allocations (all matched to the SAME total budget: global mean rank = R) ----
+def alloc_sym(R):                                  # uniform — the naive baseline
+    return np.full((L,Hq),R,int), np.full((L,Hq),R,int)
+def alloc_flat(R):                                 # coarse QK/OV asymmetry, DEPTH-CONSTANT (~ ASVD)
+    c=R/gmean
+    rqk=np.clip(np.round(np.full((L,Hq),QKeff.mean())*c),1,Dh).astype(int)
+    rov=np.clip(np.round(np.full((L,Hq),OVeff.mean())*c),1,Dh).astype(int)
+    return rqk,rov
+def alloc_depth(R):                                # per-layer depth-flip (OURS)
     c=R/gmean
     rqk=np.clip(np.round(QKeff*c),1,Dh).astype(int)
     rov=np.clip(np.round(OVeff*c),1,Dh).astype(int)
@@ -136,21 +142,21 @@ lines=[]; lg=lambda s:(lines.append(s),print(s))
 lg(f"CIRCUIT-ASYMMETRIC vs SYMMETRIC allocation  MODEL={MODEL}  L={L} Hq={Hq} d_head={Dh}")
 lg(f"QK_effrank mean={QKeff.mean():.1f}  OV_effrank mean={OVeff.mean():.1f}  global_mean={gmean:.1f}")
 base=ppl_base(); lg(f"\nNO-COMPRESSION perplexity = {base:.3f}")
-lg(f"\n{'budget R':>9} {'sym_ppl':>9} {'asym_ppl':>9} {'asym vs sym':>12}")
-lg("-"*44)
-res=[]
+lg(f"(R=Dh={Dh} is the full-rank SANITY check: all should ~= no-compression ppl)")
+lg(f"\n{'budget R':>8} {'SYM(unif)':>10} {'ASYM-flat':>10} {'ASYM-depth':>11} | {'flat<sym':>9} {'depth<flat':>11}")
+lg("-"*70)
 for R in BUDGETS:
-    rqk_s,rov_s=alloc_sym(R); rqk_a,rov_a=alloc_asym(R)
-    ps=perplexity(rqk_s,rov_s); pa=perplexity(rqk_a,rov_a)
-    gain=(ps-pa)/ps*100
-    res.append((R,ps,pa,gain))
-    lg(f"{R:>9} {ps:>9.3f} {pa:>9.3f} {gain:>+11.2f}%")
+    ps=perplexity(*alloc_sym(R)); pf=perplexity(*alloc_flat(R)); pd=perplexity(*alloc_depth(R))
+    g_fs=(ps-pf)/ps*100 if np.isfinite(ps) and ps>0 else float('nan')   # coarse asymmetry value (~ASVD)
+    g_df=(pf-pd)/pf*100 if np.isfinite(pf) and pf>0 else float('nan')   # DEPTH-FLIP value (the novelty)
+    lg(f"{R:>8} {ps:>10.2f} {pf:>10.2f} {pd:>11.2f} | {g_fs:>+8.2f}% {g_df:>+10.2f}%")
 lg("")
-lg("WIN if asym_ppl < sym_ppl (positive %): circuit-asymmetric allocation beats symmetric")
-lg("at matched budget -> the QK/OV compressibility asymmetry is exploitable -> the method works.")
-# show the asym schedule at the middle budget (per-layer means) for the figure
-R=BUDGETS[len(BUDGETS)//2]; rqk_a,rov_a=alloc_asym(R)
-lg(f"\nasym schedule at R={R} (per-layer mean kept rank):")
+lg("flat<sym  : does the COARSE QK/OV asymmetry beat uniform? (this is ~ASVD's known result)")
+lg("depth<flat: does the DEPTH-FLIP add anything BEYOND the coarse asymmetry? (= OUR novelty)")
+lg("  >> if depth<flat ~ 0, the depth-flip is NOT exploitable -> method reproduces ASVD.")
+lg("  >> if depth<flat >> 0, the depth-structure is a real, separable gain -> genuine method.")
+R=BUDGETS[len(BUDGETS)//2]; rqk_a,rov_a=alloc_depth(R)
+lg(f"\nASYM-depth schedule at R={R} (per-layer mean kept rank):")
 lg(f"{'layer':>5} {'r_qk':>6} {'r_ov':>6}")
 for l in range(0,L,max(1,L//16)):
     lg(f"{l:>5} {rqk_a[l].mean():>6.1f} {rov_a[l].mean():>6.1f}")
