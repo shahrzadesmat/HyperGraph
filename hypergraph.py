@@ -392,17 +392,25 @@ def build_hypergraph(model: nn.Module,
     sensitivities = compute_block_sensitivities(model, calib_loader, device)
 
     if lam < 1.0:
+        # Normalize BOTH signals to [0,1] before blending so lam genuinely
+        # controls the balance (raw bypass and entropy live on different
+        # scales; mixing them un-normalized made lam behave erratically).
+        s_min_v = min(sensitivities.values())
+        s_max_v = max(sensitivities.values())
+        s_norm = {i: (s - s_min_v) / (s_max_v - s_min_v + 1e-8)
+                  for i, s in sensitivities.items()}
+
         entropy_raw = compute_entropy_scores(model)
         e_min = min(entropy_raw.values())
         e_max = max(entropy_raw.values())
         h_norm = {i: (e - e_min) / (e_max - e_min + 1e-8)
                   for i, e in entropy_raw.items()}
         sensitivities = {
-            i: lam * sensitivities[i] + (1.0 - lam) * h_norm[i]
+            i: lam * s_norm[i] + (1.0 - lam) * h_norm[i]
             for i in sensitivities
         }
         print(f"\n[Hypergraph] Entropy hybrid: lam={lam}  "
-              f"(1-lam={1-lam:.2f} weight on entropy)")
+              f"(1-lam={1-lam:.2f} weight on entropy; both signals normalized)")
 
     surviving_blocks = {i: s for i, s in sensitivities.items() if s >= S_min}
     removed_blocks   = {i: s for i, s in sensitivities.items() if s <  S_min}
