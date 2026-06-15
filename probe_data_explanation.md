@@ -48,8 +48,11 @@ it is *not* training data.
 ## Reproducibility (verified paths)
 
 - ViT data: `/work/hdd/bdjd/imagenet_10pct/val` (1000 classes, 5000 imgs; we sample 1,800)
-- LLM data: `/work/hdd/bdjd/hypergraph_pruning/wikitext_train.txt`
-  (cleaned first-half of WikiText-2-raw-v1 **train**; full original cached at
-  `/u/sesmat/.cache/huggingface/datasets/wikitext/wikitext-2-raw-v1`)
+- LLM data: **WikiText-2-raw-v1 `train`, loaded canonically in-script** via
+  `datasets.load_dataset("wikitext","wikitext-2-raw-v1",split="train")` — no
+  intermediate file, fully reproducible. (Cached at
+  `/u/sesmat/.cache/huggingface/datasets/wikitext/wikitext-2-raw-v1`.) We then take
+  the first 1,400 × 256-token blocks. The old non-reproducible `wikitext_train.txt`
+  (a truncated 5 MB slice) is **no longer used** by this probe.
 - Probe script: `/work/hdd/bdjd/hypergraph_pruning/probe_nonlinear3.py`
   (run as `python probe_nonlinear3.py <model> mlp,heads,q,k,v`)

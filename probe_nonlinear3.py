@@ -119,7 +119,8 @@ def capture():
         tok = AutoTokenizer.from_pretrained(MODEL)
         model = AutoModelForCausalLM.from_pretrained(MODEL, torch_dtype=torch.float16).eval().to(device)
         layers = model.model.layers; Nl = len(layers); LAYERS = [5, Nl // 2, Nl - 6]
-        raw = open("/work/hdd/bdjd/hypergraph_pruning/wikitext_train.txt").read()
+        from datasets import load_dataset                      # canonical, reproducible source
+        raw = "".join(load_dataset("wikitext", "wikitext-2-raw-v1", split="train")["text"])
         all_ids = tok(raw, return_tensors="pt").input_ids[0]
         nb = min(N_BLOCKS, all_ids.shape[0] // BLOCK_TOK)
         ids = all_ids[:nb * BLOCK_TOK].view(nb, BLOCK_TOK)
