@@ -19,15 +19,17 @@ submit() {
          --error="/work/hdd/bdjd/hypergraph_pruning/nl3_${name}_%j.err" \
          --export=ALL \
          --wrap="
-export PATH=/work/hdd/bdjd/miniconda3/bin:\$PATH
 source /work/hdd/bdjd/miniconda3/etc/profile.d/conda.sh
 conda activate pytorch_fresh
-export HF_HUB_OFFLINE=1 PYTHONUNBUFFERED=1
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 PYTHONUNBUFFERED=1
 cd /work/hdd/bdjd/hypergraph_pruning
-python -u probe_nonlinear3.py ${model} ${sites}
+# Call the env's python by ABSOLUTE PATH: conda-activate is flaky over the shared
+# filesystem on some nodes and silently falls back to base python (no transformers),
+# which crashes the LLM probe at 'import transformers'.
+/work/hdd/bdjd/miniconda3/envs/pytorch_fresh/bin/python -u probe_nonlinear3.py ${model} ${sites}
 "
   echo "[submitted] nl3_${name}  model=${model} sites=${sites} time=${walltime}"
 }
 
-submit "deit_small_patch16_224"   "mlp,heads" "01:00:00" "deit"
-submit "meta-llama/Llama-2-7b-hf" "mlp,heads" "06:00:00" "llama"
+submit "deit_small_patch16_224"   "mlp,heads,q,k,v" "02:00:00" "deit"
+submit "meta-llama/Llama-2-7b-hf" "mlp,heads,q,k,v" "12:00:00" "llama"
