@@ -43,7 +43,7 @@ BLOCK_TOK  = 256
 N_IMG      = 1800      # DeiT: images (image-level split units)
 SPLIT      = (0.70, 0.15, 0.15)
 FRACS      = [0.05, 0.10]
-SEEDS      = [0, 1, 2]
+SEEDS      = [0, 1, 2][:int(os.environ.get("NL3_NSEEDS", "3"))]   # NL3_NSEEDS=1 for a fast decisive read
 H_CAP      = 1024      # corr hidden cap; also enforce N_train/h >= 50
 NH_MIN     = 50
 DROPOUT    = 0.1
