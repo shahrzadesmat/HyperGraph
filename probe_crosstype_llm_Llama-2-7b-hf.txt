@@ -1,0 +1,41 @@
+CROSS-TYPE redundancy (LLM): reconstruct MLP contribution from ATTENTION (held-out)
+MODEL=meta-llama/Llama-2-7b-hf  layers=32  n_train=16800 n_test=7200
+ lyr  mlp<-attn_self  mlp<-attn_local   control
+------------------------------------------------
+   0           0.645            0.540     1.020
+   1           0.155            0.119     1.040
+   2           0.857            0.852     1.092
+   3           0.887            0.907     1.091
+   4           0.836            0.830     1.090
+   5           0.864            0.900     1.087
+   6           0.856            0.879     1.087
+   7           0.862            0.892     1.090
+   8           0.860            0.892     1.091
+   9           0.865            0.901     1.093
+  10           0.854            0.884     1.091
+  11           0.861            0.905     1.090
+  12           0.873            0.918     1.095
+  13           0.867            0.915     1.092
+  14           0.887            0.932     1.095
+  15           0.882            0.935     1.093
+  16           0.857            0.884     1.093
+  17           0.866            0.921     1.096
+  18           0.879            0.924     1.099
+  19           0.891            0.939     1.099
+  20           0.861            0.912     1.095
+  21           0.877            0.898     1.103
+  22           0.863            0.929     1.097
+  23           0.897            0.936     1.108
+  24           0.902            0.965     1.099
+  25           0.906            0.959     1.095
+  26           0.910            0.973     1.094
+  27           0.909            0.974     1.107
+  28           0.910            0.978     1.097
+  29           0.871            0.919     1.099
+  30           0.442            0.169     1.093
+  31           0.468            0.444     1.065
+mean: self=0.819  local=0.841  (control ~1.0)
+
+READ: low held-out err + control ~1.0 -> MLP work is partly reproducible from
+ATTENTION -> cross-type redundancy exists -> isomorphic's within-type assumption
+leaves redundancy unexploited. If err ~ 1.0, attn & MLP are independent.

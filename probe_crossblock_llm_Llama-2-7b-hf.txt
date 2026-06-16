@@ -1,0 +1,51 @@
+CROSS-BLOCK redundancy (LLM)  MODEL=meta-llama/Llama-2-7b-hf  layers=32  n_train=8400 n_test=3600
+(features PCA-reduced: Δ->128 comps/layer, hidden->256 comps/layer)
+
+PART A  block-level: reconstruct Δ_i from OTHER layers' Δ (PCA-128)
+layer  err_allOthers  err_earlierOnly  err_control
+----------------------------------------------------
+    0          0.606              n/a        1.122
+    1          0.023            0.308        1.158
+    2          0.818            0.931        1.112
+    3          0.865            0.954        1.112
+    4          0.766            0.824        1.111
+    5          0.872            0.911        1.113
+    6          0.857            0.890        1.113
+    7          0.859            0.877        1.112
+    8          0.862            0.870        1.112
+    9          0.872            0.871        1.112
+   10          0.867            0.863        1.113
+   11          0.867            0.861        1.112
+   12          0.870            0.863        1.112
+   13          0.857            0.853        1.112
+   14          0.857            0.857        1.112
+   15          0.840            0.843        1.111
+   16          0.807            0.820        1.111
+   17          0.823            0.837        1.112
+   18          0.814            0.829        1.111
+   19          0.814            0.829        1.112
+   20          0.779            0.807        1.110
+   21          0.774            0.797        1.108
+   22          0.785            0.807        1.109
+   23          0.790            0.807        1.109
+   24          0.811            0.823        1.111
+   25          0.813            0.828        1.108
+   26          0.822            0.839        1.108
+   27          0.811            0.832        1.107
+   28          0.811            0.836        1.109
+   29          0.756            0.789        1.110
+   30          0.134            0.142        1.139
+   31          0.395            0.395        1.119
+mean: all-others=0.759   earlier-only=0.793   (control ~1.0)
+
+PART B  late layers reconstructed from EARLIER hidden NEURONS (causal, PCA-256)
+layer  #earlierLayers  feat_dim  err_neuron  err_control
+--------------------------------------------------------
+   28              28      7168       0.868        1.267
+   29              29      7424       0.824        1.289
+   30              30      7680       0.146        1.327
+   31              31      7936       0.394        1.287
+
+READ: centered err near 0 with control near 1.0 -> genuine cross-block redundancy.
+Part B shows whether late layers are reproducible from earlier NEURONS (the fold
+units) -> exploitable for cross-block pruning. PCA reduction keeps it tractable at 7B.

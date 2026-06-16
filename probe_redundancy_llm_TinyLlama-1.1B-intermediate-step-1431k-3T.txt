@@ -1,0 +1,60 @@
+HIGHER-ORDER REDUNDANCY PROBE  MODEL=TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T  layers=22
+tokens/layer=4096  CORR_DUP=0.9
+
+layer                 C  eff_rank  eff/C  meanMaxCorr  pairDup  totRedund    HO_gap
+--------------------------------------------------------------------------------------
+L00_attn_out       2048      29.3  0.014        0.871     1275     2018.7     743.7
+L00_mlp_hidden     5632     133.8  0.024        0.345       12     5498.2    5486.2
+L01_attn_out       2048      98.5  0.048        0.638       83     1949.5    1866.5
+L01_mlp_hidden     5632     175.9  0.031        0.311        0     5456.1    5456.1
+L02_attn_out       2048     128.0  0.063        0.586        0     1920.0    1920.0
+L02_mlp_hidden     5632       1.0    0.0        0.282        5     5631.0    5626.0
+L03_attn_out       2048      40.4   0.02        0.564       44     2007.6    1963.6
+L03_mlp_hidden     5632     360.9  0.064         0.27        0     5271.1    5271.1
+L04_attn_out       2048      74.3  0.036        0.533       25     1973.7    1948.7
+L04_mlp_hidden     5632     297.2  0.053         0.24        2     5334.8    5332.8
+L05_attn_out       2048     106.1  0.052        0.518        0     1941.9    1941.9
+L05_mlp_hidden     5632     360.5  0.064        0.234        0     5271.5    5271.5
+L06_attn_out       2048      63.3  0.031        0.587        0     1984.7    1984.7
+L06_mlp_hidden     5632     358.8  0.064        0.226        0     5273.2    5273.2
+L07_attn_out       2048      44.9  0.022        0.644       11     2003.1    1992.1
+L07_mlp_hidden     5632       1.1    0.0        0.227        5     5630.9    5625.9
+L08_attn_out       2048      38.3  0.019        0.618       50     2009.7    1959.7
+L08_mlp_hidden     5632     280.5   0.05        0.229        0     5351.5    5351.5
+L09_attn_out       2048      78.2  0.038        0.616        0     1969.8    1969.8
+L09_mlp_hidden     5632     386.2  0.069        0.224        0     5245.8    5245.8
+L10_attn_out       2048     103.4  0.051        0.604        0     1944.6    1944.6
+L10_mlp_hidden     5632     474.2  0.084        0.199        0     5157.8    5157.8
+L11_attn_out       2048      63.2  0.031        0.622        0     1984.8    1984.8
+L11_mlp_hidden     5632     531.4  0.094         0.19        0     5100.6    5100.6
+L12_attn_out       2048      66.3  0.032        0.692        0     1981.7    1981.7
+L12_mlp_hidden     5632     372.2  0.066        0.214        0     5259.8    5259.8
+L13_attn_out       2048      48.0  0.023        0.698        0     2000.0    2000.0
+L13_mlp_hidden     5632     291.0  0.052        0.231        0     5341.0    5341.0
+L14_attn_out       2048      67.2  0.033        0.712        0     1980.8    1980.8
+L14_mlp_hidden     5632     316.4  0.056        0.224        0     5315.6    5315.6
+L15_attn_out       2048      68.8  0.034        0.677       15     1979.2    1964.2
+L15_mlp_hidden     5632     314.4  0.056        0.235        0     5317.6    5317.6
+L16_attn_out       2048      50.4  0.025        0.659        7     1997.6    1990.6
+L16_mlp_hidden     5632     168.2   0.03         0.26        0     5463.8    5463.8
+L17_attn_out       2048     108.9  0.053        0.606        6     1939.1    1933.1
+L17_mlp_hidden     5632     281.4   0.05        0.245        0     5350.6    5350.6
+L18_attn_out       2048      32.4  0.016        0.621       35     2015.6    1980.6
+L18_mlp_hidden     5632     149.8  0.027        0.258        0     5482.2    5482.2
+L19_attn_out       2048      59.9  0.029        0.618       10     1988.1    1978.1
+L19_mlp_hidden     5632     169.2   0.03        0.269        0     5462.8    5462.8
+L20_attn_out       2048      58.8  0.029         0.61        0     1989.2    1989.2
+L20_mlp_hidden     5632     138.0  0.024        0.282        0     5494.0    5494.0
+L21_attn_out       2048      53.5  0.026        0.683        4     1994.5    1990.5
+L21_mlp_hidden     5632      10.9  0.002          0.3        4     5621.1    5617.1
+
+INTERPRETATION:
+  MLP  hidden: mean eff/C = 0.045  (lower = more redundant)
+  MLP  mean pairwise-duplicate channels = 1 / 5632
+  MLP  mean HIGHER-ORDER gap = 5377 dims (redundancy invisible to pairwise methods)
+  Attn out: mean eff/C = 0.033
+  Attn mean pairwise-duplicate channels = 71 / 2048
+  Attn mean HIGHER-ORDER gap = 1909 dims
+
+If HO_gap >> pairDup, pairwise graph methods (GOHSP/DepGraph) leave most
+redundancy on the table -> a set-level (hypergraph) method has real headroom.
