@@ -1,0 +1,23 @@
+phase6_output_aware_v  MODEL=meta-llama/Llama-2-7b-hf  heads=32  head_dim=128  layers=32  d=[32, 64, 128] (of 128)
+capture+cov: 343s  tokens/layer=61440
+output-gain spread (max/median of g per head, mean over heads&layers): 2.59 (>>1 => W_O strongly non-isotropic -> output-aware can differ from value-PCA)
+====================================================================================
+OUTPUT-ERROR (fraction of W_O-output energy lost; lower=better), mean over heads
+    d   comp |  value-PCA(=MLA)  output-aware |  reduction
+------------------------------------------------------------------------------------
+   32   4.0x |           0.3987        0.3985 |      +0.0%
+   64   2.0x |           0.2159        0.2158 |      +0.0%
+  128   1.0x |           0.0000        0.0000 |      +0.0%
+------------------------------------------------------------------------------------
+
+baseline ppl=5.718   WIRING: value@d=128 ppl=5.718 -> OK
+    d   comp |  ppl value-PCA ppl output-aware | Δppl(val-out)  verdict
+------------------------------------------------------------------------------------
+   32   4.0x |         25.841           25.539 |        +0.302  OUTPUT-AWARE WINS
+   64   2.0x |          8.022            8.008 |        +0.014  OUTPUT-AWARE WINS
+  128   1.0x |          5.718            5.718 |        +0.000  no gain
+------------------------------------------------------------------------------------
+VERDICT: output-aware beats value-PCA(=MLA) on perplexity at 2/3 budgets.
+If yes -> W_O makes value-variance the wrong objective; output-space V compression is a real lever MLA misses.
+Scoped to V (K full); pre-attention surgery; output-gain ignores attention averaging (perplexity is exact).
+total: 424s

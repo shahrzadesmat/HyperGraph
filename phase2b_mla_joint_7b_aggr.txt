@@ -1,0 +1,27 @@
+phase2b_mla_joint (mem-fixed)  MODEL=meta-llama/Llama-2-7b-hf  C=4096  layers=32  taus=[0.95, 0.9, 0.85, 0.8, 0.75]
+capture: 321s   rows/layer=61440
+CORRECTNESS CHECK (layer 0): max|z_from_x - z_from_KV| should be ~0 (vs |z|):
+   tau=0.95: max_abs_err=3.208e-03   |z|~1.591e+00   OK
+   tau=0.9: max_abs_err=3.208e-03   |z|~2.160e+00   OK
+   tau=0.85: max_abs_err=3.211e-03   |z|~2.755e+00   OK
+   tau=0.8: max_abs_err=3.204e-03   |z|~3.503e+00   OK
+   tau=0.75: max_abs_err=3.208e-03   |z|~4.577e+00   OK
+  fit 8/32 layers   (2137s)
+  fit 16/32 layers   (4327s)
+  fit 24/32 layers   (6872s)
+  fit 32/32 layers   (9450s)
+fit done: 9451s
+
+baseline (full K+V) perplexity = 5.739   (linear@mildest-tau should be near this)
+--------------------------------------------------------------------------------------------------------
+  tau  mean_dc  cacheX  dFLOP/tok  dFLOP% | ppl_MLA(lin)  ppl_nonlin |     Δppl  verdict
+ 0.95     1701   4.82x   6.48e+08   4.81% |        6.153       6.046 |   +0.107  NONLINEAR
+ 0.90     1146   7.15x   6.03e+08   4.47% |        7.161       6.636 |   +0.525  NONLINEAR
+ 0.85      824   9.94x   5.67e+08   4.21% |       10.857       8.055 |   +2.802  NONLINEAR
+ 0.80      608  13.47x   5.15e+08   3.82% |       30.074      11.788 |  +18.285  NONLINEAR
+ 0.75      453  18.07x   4.45e+08   3.30% |      155.730      33.342 | +122.388  NONLINEAR
+--------------------------------------------------------------------------------------------------------
+baseline ppl=5.739.  ppl_MLA(lin) = faithful linear MLA at the SAME shared latent.
+VERDICT: nonlinear MLA beats linear MLA at 5/5 operating points.
+Trust only if the correctness check passed AND linear@mildest-tau is near baseline.
+total: 9686s

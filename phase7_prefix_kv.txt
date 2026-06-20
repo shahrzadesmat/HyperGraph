@@ -1,0 +1,19 @@
+phase7_prefix_kv  MODEL=meta-llama/Llama-2-7b-hf  C=4096  L=1024 CT=256  scenarios=4 probes=6  d=[16, 32, 64, 128, 256] (comp=[256, 128, 64, 32, 16]x)
+  scenario 1/4 done  (229s)
+  scenario 2/4 done  (240s)
+  scenario 3/4 done  (250s)
+  scenario 4/4 done  (260s)
+================================================================================
+KL( full-prefix || compressed-prefix ) at probe positions, over prefix x probe (nats; lower=better).
+    d   comp |    mean KL   worst KL  median KL
+--------------------------------------------------------------------------------
+   16   256x |     0.4052     0.6185     0.3811
+   32   128x |     0.3134     0.4872     0.3156
+   64    64x |     0.6680     0.8869     0.6558
+  128    32x |     2.3066     2.6639     2.3194
+  256    16x |     2.8360     3.2193     2.8354
+--------------------------------------------------------------------------------
+READ: KL near 0 means compressing the shared prefix barely changes behavior -> reuse it cheaply.
+  prefix tolerates up to 256x with mean KL=0.4052; single-seq KV is ~2-3x near-lossless. If KL stays tiny here at >>3x -> cross-request lever is REAL.
+  low worst-vs-mean spread => the SAME prefix compression transfers across diverse probes (the agentic win).
+total: 261s

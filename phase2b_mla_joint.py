@@ -22,14 +22,14 @@ env: KV_TAUS=0.99,0.98,0.97,0.95  KV_CALIB=60000  KV_PPL_CHUNKS=60
 import os, math, time, torch
 import torch.nn as nn
 
-MODEL = "meta-llama/Llama-2-7b-hf"
+MODEL = os.environ.get("KV_MODEL", "meta-llama/Llama-2-7b-hf")
 TAUS = [float(x) for x in os.environ.get("KV_TAUS", "0.99,0.98,0.97,0.95").split(",")]
 N_CALIB = int(os.environ.get("KV_CALIB", "60000"))
 PPL_CHUNKS = int(os.environ.get("KV_PPL_CHUNKS", "60"))
 CHUNK = 2048
 H_CAP = 1024; DROPOUT = 0.1; WD = 1e-2; LR = 1e-3; MAX_EPOCHS = 200; PATIENCE = 15; MIN_DREL = 1e-4; BS = 8192
 device = torch.device("cuda")
-OUT = "/work/hdd/bdjd/hypergraph_pruning/phase2b_mla_joint.txt"
+OUT = "/work/hdd/bdjd/hypergraph_pruning/phase2b_mla_joint" + os.environ.get("KV_TAG", "") + ".txt"
 lines = []; lg = lambda s: (lines.append(str(s)), print(s, flush=True)); flush = lambda: open(OUT, "w").write("\n".join(lines) + "\n")
 t0 = time.time()
 

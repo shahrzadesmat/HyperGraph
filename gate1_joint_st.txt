@@ -1,0 +1,23 @@
+gate1_joint_st  MODEL=meta-llama/Llama-2-7b-hf  C=4096  layers=32  Tb=16  budgets r=[64, 128, 256, 512] (comp=[64, 32, 16, 8]x)
+capture: 312s  chunks=24
+  transforms 8/32  (323s)
+  transforms 16/32  (330s)
+  transforms 24/32  (337s)
+  transforms 32/32  (344s)
+
+baseline ppl=5.718   |   WIRING: full-budget(r=4096) ppl=5.719 -> OK
+========================================================================================================
+ppl (lower=better). tmp:B-A=value of temporal compression; shp:S-B=staircase-vs-rectangle (NOT coupling);
+CPL:S-C = PURE coupling (joint energy-optimal vs separable-surrogate). Gate#1 hinges on CPL.
+    r   comp |   (A)MLA  (B)rect   (S)sep (C)joint |  tmp:B-A  shp:S-B   CPL:S-C
+--------------------------------------------------------------------------------------------------------
+   64    64x |   19.143   19.143   22.245   21.070 |   +0.000   -3.102    +1.176
+  128    32x |    9.183    9.183    9.400    9.193 |   +0.000   -0.216    +0.207
+  256    16x |    6.528    6.528    6.499    6.462 |   +0.000   +0.028    +0.037
+  512     8x |    5.976    5.976    5.938    5.936 |   +0.000   +0.038    +0.003
+--------------------------------------------------------------------------------------------------------
+VERDICT (pure coupling): joint(C) beats separable-surrogate(S) at 4/4 budgets.
+  CPL gain (S-C) by budget r=[64, 128, 256, 512]: [1.176, 0.207, 0.037, 0.003]  | widens toward aggressive r: YES
+GATE #1 = PASS  (PASS needs C<S on nearly all budgets AND the coupling gain growing as r shrinks).
+Scoped to K (V full); block codec (Tb-token latency); pre-RoPE. If PASS -> joint-MLA + DeltaKV head-to-head.
+total: 1069s

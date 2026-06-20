@@ -1,0 +1,24 @@
+phase2b_mla_joint (mem-fixed)  MODEL=meta-llama/Llama-2-13b-hf  C=5120  layers=40  taus=[0.95, 0.88, 0.8]
+capture: 331s   rows/layer=40960
+CORRECTNESS CHECK (layer 0): max|z_from_x - z_from_KV| should be ~0 (vs |z|):
+   tau=0.95: max_abs_err=2.867e-03   |z|~2.098e+00   OK
+   tau=0.88: max_abs_err=2.864e-03   |z|~3.347e+00   OK
+   tau=0.8: max_abs_err=2.869e-03   |z|~5.065e+00   OK
+  fit 8/40 layers   (1274s)
+  fit 16/40 layers   (2505s)
+  fit 24/40 layers   (3895s)
+  fit 32/40 layers   (5319s)
+  fit 40/40 layers   (6582s)
+fit done: 6582s
+
+baseline (full K+V) perplexity = 5.135   (linear@mildest-tau should be near this)
+--------------------------------------------------------------------------------------------------------
+  tau  mean_dc  cacheX  dFLOP/tok  dFLOP% | ppl_MLA(lin)  ppl_nonlin |     Δppl  verdict
+ 0.95     1983   5.16x   9.97e+08   3.83% |        5.572       5.456 |   +0.117  NONLINEAR
+ 0.88     1147   8.93x   9.03e+08   3.47% |        9.225       6.784 |   +2.441  NONLINEAR
+ 0.80      692  14.80x   8.06e+08   3.10% |      528.641      32.324 | +496.317  NONLINEAR
+--------------------------------------------------------------------------------------------------------
+baseline ppl=5.135.  ppl_MLA(lin) = faithful linear MLA at the SAME shared latent.
+VERDICT: nonlinear MLA beats linear MLA at 3/3 operating points.
+Trust only if the correctness check passed AND linear@mildest-tau is near baseline.
+total: 6837s

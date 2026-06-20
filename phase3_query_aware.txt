@@ -1,0 +1,29 @@
+phase3_query_aware  MODEL=meta-llama/Llama-2-7b-hf  heads=32  head_dim=128  layers=32
+ranks(score)=[8, 16, 32, 48, 64, 96]  ppl_ranks=[32, 64] (of 128)  calib=60000
+capture+cov: 353s   tokens/layer=61440
+========================================================================================
+SCORE-ERROR (relative; lower=better key compression for the q.k score), averaged over heads
+ rank  cacheX |  key-PCA(=MLA)  query-aware |  reduction
+----------------------------------------------------------------------------------------
+    8   16.0x |         0.0520       0.0583 |     -12.1%
+   16    8.0x |         0.0343       0.0388 |     -13.1%
+   32    4.0x |         0.0199       0.0234 |     -17.4%
+   48    2.7x |         0.0133       0.0160 |     -20.3%
+   64    2.0x |         0.0094       0.0114 |     -22.0%
+   96    1.3x |         0.0040       0.0056 |     -40.8%
+----------------------------------------------------------------------------------------
+If query-aware << key-PCA, the keys carry score-irrelevant variance that MLA wastes budget on.
+
+WIRING CHECK: keyPCA at r=128 (full rank) ppl=5.739 vs baseline 5.739  -> OK
+
+baseline (full K) perplexity = 5.739
+ rank cacheX(K) | ppl key-PCA(=MLA) ppl query-aware | Δppl(MLA-QA)  verdict
+----------------------------------------------------------------------------------------
+   32      4.0x |             6.767             nan |         +nan  no gain
+   64      2.0x |             5.942        1631.870 |    -1625.928  no gain
+----------------------------------------------------------------------------------------
+VERDICT: query-aware beats key-PCA(=MLA) on perplexity at 0/2 ranks.
+If yes on BOTH metrics -> output-aware compression has real headroom over reconstruction (MLA);
+the lever to beat linear is the OBJECTIVE (preserve the score/attention), not encoder nonlinearity.
+Diagnostic isolates K (V left full); query subspace is pre-RoPE (proxy); ppl is exact downstream.
+total: 430s
