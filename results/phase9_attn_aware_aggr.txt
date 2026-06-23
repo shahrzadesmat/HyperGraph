@@ -1,0 +1,34 @@
+phase9_attn_aware  MODEL=meta-llama/Llama-2-7b-hf  heads=32  head_dim=128  layers=32  rcond=0.001
+ranks(score)=[8, 16, 32, 48, 64, 96]  ppl_ranks=[8, 16, 24, 32] (of 128)  calib=60000
+capture+cov: 421s   tokens/layer=61440
+codecs built: 437s
+====================================================================================================
+SCORE-ERROR (relative; lower=better).  attnAware is the provable min -> MUST be <= keyPCA & queryWrong
+ rank  cacheX |  keyPCA(=MLA) queryWrong(p3) attnAware(ours) | ours vs MLA
+----------------------------------------------------------------------------------------------------
+    8   16.0x |        0.0520         0.0583          0.0222 |      +57.3%
+   16    8.0x |        0.0343         0.0388          0.0134 |      +60.9%
+   32    4.0x |        0.0199         0.0234          0.0066 |      +66.8%
+   48    2.7x |        0.0133         0.0160          0.0036 |      +72.9%
+   64    2.0x |        0.0094         0.0114          0.0019 |      +79.4%
+   96    1.3x |        0.0040         0.0056          0.0004 |      +89.9%
+----------------------------------------------------------------------------------------------------
+attnAware << keyPCA on score-error => keys carry logit-irrelevant variance MLA wastes budget on.
+queryWrong > keyPCA reproduces phase3's failure: projecting onto the query subspace discards key energy.
+
+WIRING CHECK: keyPCA at r=128 (full rank) ppl=5.739 vs baseline 5.739  -> OK
+WIRING CHECK: attnAware at r=128 (full rank) ppl=5.739 vs baseline 5.739  -> OK
+
+baseline (full K) perplexity = 5.739
+ rank cacheX(K) | ppl keyPCA(=MLA) ppl queryWrong ppl attnAware | Δppl(MLA-ours)  verdict
+----------------------------------------------------------------------------------------------------
+    8     16.0x |           31.849            nan        30.226 |         +1.623  ATTN-AWARE WINS
+   16      8.0x |           13.365            nan        11.918 |         +1.447  ATTN-AWARE WINS
+   24      5.3x |            8.248            nan         7.803 |         +0.445  ATTN-AWARE WINS
+   32      4.0x |            6.767            nan         6.636 |         +0.131  ATTN-AWARE WINS
+----------------------------------------------------------------------------------------------------
+VERDICT: attnAware beats keyPCA(=MLA) on perplexity at 4/4 ranks.
+If yes on BOTH metrics -> the lever to beat linear KV compression is the OBJECTIVE (preserve the
+attention logit via the Σq-whitened generalized eigenproblem), not encoder nonlinearity.
+Diagnostic isolates K (V full); Σq is pre-RoPE (proxy); ppl is exact (real RoPE+softmax downstream).
+total: 593s

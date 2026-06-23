@@ -1,0 +1,23 @@
+phase12_joint_kv  MODEL=meta-llama/Llama-2-7b-hf  heads=32  head_dim=128  layers=32  ranks=[8, 16, 32, 64]
+calib: 80 seqs x 512 tok (batch 4);  total cacheX = 128/r (BOTH K and V)
+  calib 20/80 seqs  (228s)
+  calib 40/80 seqs  (230s)
+  calib 60/80 seqs  (231s)
+  calib 80/80 seqs  (233s)
+capture: 233s   tokens=40960
+codecs built: 252s
+
+WIRING: fisher@r=128 (K&V full rank) ppl=5.739 vs baseline 5.739 -> OK
+baseline (full K+V) perplexity = 5.739
+ rank  cacheX |      mla    kqsvd   fisher | Δ(kqsvd-fisher) Δ(mla-fisher)  verdict
+------------------------------------------------------------------------------------------------
+    8   16.0x |  541.606  609.318  579.445 |         +29.873       -37.840  no
+   16    8.0x |  154.905  108.066  105.853 |          +2.212       +49.051  FISHER BEST
+   32    4.0x |   29.667   21.882   21.085 |          +0.796        +8.582  FISHER BEST
+   64    2.0x |    8.488    7.498    7.485 |          +0.013        +1.003  FISHER BEST
+------------------------------------------------------------------------------------------------
+VERDICT: fisher stack is best at 3/4 TOTAL-cache budgets (both K & V compressed).
+WIN = fisher stays usable at higher total cacheX than mla/kqsvd -> 2nd-order objective extends the
+usable-compression frontier on the FULL cache. cacheX counts BOTH K and V (rank r of head_dim each).
+V uses the output metric G=W_OᵀW_O in both kqsvd & fisher; the K metric (Σq vs M̄) is the differentiator.
+total: 494s

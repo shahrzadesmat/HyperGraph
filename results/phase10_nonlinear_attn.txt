@@ -1,0 +1,27 @@
+phase10_nonlinear_attn  MODEL=meta-llama/Llama-2-7b-hf  heads=32  head_dim=128  layers=32  ranks=[16, 32]  rcond=0.001  null=True
+capture: 403s   tokens/layer=61440
+  fit 8/32 layers   (718s)
+  fit 16/32 layers   (1000s)
+  fit 24/32 layers   (1281s)
+  fit 32/32 layers   (1564s)
+fit done: 1564s
+========================================================================================================
+DIAGNOSTIC — held-out relative LOGIT error (lower=better), mean over layers.  corrW is the NEW CELL.
+ rank | keyPCA(lin)  attn(lin)   +corrE   +corrW |  nl-gain  Δgap-null  verdict
+--------------------------------------------------------------------------------------------------------
+   16 |      0.1540     0.0994   0.0977   0.0985 |  +0.0009    +0.0009  no real gain
+   32 |      0.1121     0.0665   0.0649   0.0661 |  +0.0005    +0.0005  no real gain
+--------------------------------------------------------------------------------------------------------
+nl-gain = attn(lin) − +corrW (logit-error cut by the whitened residual).  Δgap-null subtracts the
+Gaussian-null floor (residual gain on covariance-matched Gaussian = pure overfitting).  Δgap>0 => real.
+
+baseline (full K) perplexity = 5.739
+ rank  cacheX |   keyPCA  attnAware  +corrW(new)   +corrE | Δ(attn-corrW)  verdict
+--------------------------------------------------------------------------------------------------------
+   16    8.0x |   13.352     11.909       11.086   10.835 |        +0.823  NL HELPS IN Σq
+   32    4.0x |    6.765      6.635        6.565    6.491 |        +0.070  NL HELPS IN Σq
+--------------------------------------------------------------------------------------------------------
+WIN for the empty cell = +corrW < attnAware (nonlinearity pays once the metric is Σq).
+If +corrW ≈ attnAware AND diagnostic Δgap≈0 -> the objective is the whole lever; nonlinearity is a
+red herring even in the right metric -> a clean negative that closes the 2x2 (linear×nonlinear)×(Euclid×Σq).
+total: 1664s

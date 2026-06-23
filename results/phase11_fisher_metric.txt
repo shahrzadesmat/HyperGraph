@@ -1,0 +1,25 @@
+phase11_fisher_metric  MODEL=meta-llama/Llama-2-7b-hf  heads=32  head_dim=128  layers=32  ranks=[8, 16, 32, 64]
+calib: 80 seqs x 512 tok (batch 4);  rcond=0.001
+  calib 20/80 seqs  (464s)
+  calib 40/80 seqs  (465s)
+  calib 60/80 seqs  (467s)
+  calib 80/80 seqs  (468s)
+capture: 469s   tokens=40960
+codecs built: 483s
+  top-8 decode-subspace overlap  attnAware vs fisher = 0.000  (1.0 => identical basis)
+  top-32 decode-subspace overlap  attnAware vs fisher = 0.000  (1.0 => identical basis)
+
+WIRING: fisher@r=128 ppl=5.739 vs baseline 5.739 -> OK
+baseline (full K) perplexity = 5.739
+ rank  cacheX |   keyPCA  attnAware  fisher(new) | Δ(attn-fisher)  verdict
+--------------------------------------------------------------------------------------------
+    8   16.0x |   30.067     27.906       26.107 |         +1.799  FISHER WINS
+   16    8.0x |   12.637     11.847       11.186 |         +0.661  FISHER WINS
+   32    4.0x |    6.766      6.626        6.583 |         +0.043  FISHER WINS
+   64    2.0x |    5.951      5.889        5.882 |         +0.007  FISHER WINS
+--------------------------------------------------------------------------------------------
+VERDICT: fisher (2nd-order output metric) beats attnAware (=KQ-SVD, 1st-order logit) at 4/4 ranks.
+If fisher << attnAware -> the output/Fisher metric is a real, novel improvement over KQ-SVD.
+If fisher ≈ attnAware (and subspace overlap ~1) -> 1st order already captures it; KQ-SVD is enough.
+K-only (V full); Σq/M̄ use pre-RoPE q (proxy) with REAL attention weights; ppl exact downstream.
+total: 717s
